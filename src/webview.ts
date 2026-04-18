@@ -71,6 +71,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
         <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
         <button onclick="toggleMemoryMap()">Toggle Memory Map</button>
+        <div id="memory-map-legend" style="display: none; align-items: center; gap: 15px; margin-left: 20px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(211, 47, 47, 0.9); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">Heap Allocations</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(25, 118, 210, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.text (Executable)</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(56, 142, 60, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.rodata</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(129, 199, 132, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.data</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(123, 31, 162, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.bss</span></div>
+        </div>
       </div>
       <div class="main-layout" id="mainLayout">
         <div class="sidebar-wrapper">
@@ -594,12 +601,16 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         function toggleMemoryMap() {
           const mainLayout = document.getElementById('mainLayout');
           const memLayout = document.getElementById('memoryMapLayout');
+          const legend = document.getElementById('memory-map-legend');
+          
           if (mainLayout.style.display === 'none') {
             mainLayout.style.display = 'flex';
             memLayout.style.display = 'none';
+            if (legend) legend.style.display = 'none';
           } else {
             mainLayout.style.display = 'none';
             memLayout.style.display = 'block';
+            if (legend) legend.style.display = 'flex';
             renderMemoryMap();
           }
         }
@@ -835,10 +846,21 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
 
            let bg = 'var(--vscode-editor-selectionBackground)';
            let fg = '#fff';
-           if (sym.sect === 'text') bg = 'rgba(25, 118, 210, 0.85)'; // Blue
-           else if (sym.sect === 'rodata') bg = 'rgba(56, 142, 60, 0.85)'; // Green
-           else if (sym.sect === 'data') { bg = 'rgba(129, 199, 132, 0.85)'; fg = '#000'; } // Light Green
-           else if (sym.sect === 'bss') bg = 'rgba(123, 31, 162, 0.85)'; // Purple
+
+           // Explicitly intercept and mark Heap Allocations in High Contrast Red natively 
+           if (sym.name && sym.name.toLowerCase().includes('heap')) {
+               bg = 'rgba(211, 47, 47, 0.9)'; // Red
+               fg = '#fff';
+           } else if (sym.sect === 'text') {
+               bg = 'rgba(25, 118, 210, 0.85)'; // Blue
+           } else if (sym.sect === 'rodata') {
+               bg = 'rgba(56, 142, 60, 0.85)'; // Green
+           } else if (sym.sect === 'data') { 
+               bg = 'rgba(129, 199, 132, 0.85)'; // Light Green
+               fg = '#000'; 
+           } else if (sym.sect === 'bss') {
+               bg = 'rgba(123, 31, 162, 0.85)'; // Purple
+           }
 
            sb.style.backgroundColor = bg;
            sb.style.borderRight = '1px solid rgba(255,255,255,0.3)';
