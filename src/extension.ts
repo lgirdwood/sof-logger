@@ -92,7 +92,7 @@ export function activate(context: vscode.ExtensionContext) {
               }
             }
             
-            panel.webview.html = getWebviewContent(logData);
+            panel.webview.html = getWebviewContent(logData, symbols);
             vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
             resolve();
           });
@@ -132,15 +132,7 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       panel.webview.onDidReceiveMessage(async message => {
-        if (message.command === 'loadElf') {
-          const uris = await vscode.window.showOpenDialog({
-            canSelectMany: false,
-            filters: { 'ELF files': ['elf'] }
-          });
-          if (uris && uris[0]) {
-            resolveElfSymbols(uris[0].fsPath, logData, panel);
-          }
-        } else if (message.command === 'openSource') {
+        if (message.command === 'openSource') {
           if (message.file && fs.existsSync(message.file)) {
             vscode.workspace.openTextDocument(vscode.Uri.file(message.file)).then(doc => {
               vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside).then(editor => {

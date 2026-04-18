@@ -1,6 +1,6 @@
 import { LogDataPoint } from './parser';
 
-export function getWebviewContent(data: LogDataPoint[]): string {
+export function getWebviewContent(data: LogDataPoint[], symbols: any[] = []): string {
   const timeFactor = 38420000.0;
   
   const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
@@ -36,7 +36,8 @@ export function getWebviewContent(data: LogDataPoint[]): string {
       <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
       <style>
         body { padding: 10px; font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); background-color: var(--vscode-editor-background); overflow: hidden; }
-        .toolbar { margin-bottom: 10px; }
+        .toolbar { margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+        .toolbar h2 { margin: 0; padding-right: 15px; font-size: 16px; }
         button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 12px; cursor: pointer; }
         button:hover { background: var(--vscode-button-hoverBackground); }
         .main-layout { display: flex; width: 100vw; height: 85vh; }
@@ -48,18 +49,26 @@ export function getWebviewContent(data: LogDataPoint[]): string {
         summary { font-family: monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px; user-select: none; }
         summary:hover { background: var(--vscode-list-hoverBackground); }
         summary.selected { background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+        .memory-map-layout { display: none; padding: 10px; overflow-y: auto; height: 85vh; }
+        .memory-region { margin-bottom: 20px; }
+        .memory-region h3 { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; }
+        .map-scrollable { width: 100%; overflow-x: auto; overflow-y: hidden; background: var(--vscode-editor-background); padding: 5px; box-sizing: border-box; }
+        .map-inner { width: calc(var(--map-zoom, 1) * 100%); transform-origin: left top; min-width: 100%; position: relative; }
+        .memory-bank { border: 1px solid var(--vscode-editorGroup-border); margin-bottom: 8px; position: relative; background: var(--vscode-editor-background); height: 35px; box-sizing: border-box; overflow: hidden; background-image: repeating-linear-gradient(to right, transparent, transparent calc(6.25% - 1px), var(--vscode-editorGroup-border) 6.25%); }
+        .mem-block { position: absolute; height: 100%; background: var(--vscode-editor-selectionBackground); border-right: 1px solid var(--vscode-editor-selectionForeground); overflow: hidden; font-size: 10px; display: flex; align-items: center; justify-content: center; color: var(--vscode-editor-foreground); cursor: pointer; box-sizing: border-box; }
+        .mem-block:hover { background: var(--vscode-list-hoverBackground); }
       </style>
     </head>
     <body>
       <div class="toolbar">
         <h2>QEMU Log Execution</h2>
-        <button onclick="loadSymbols()">Load ELF Symbols</button>
         <button onclick="resetZoom()">Reset Zoom</button>
         <button id="toggleExceptionsBtn" onclick="toggleExceptions()">Toggle Exceptions (On)</button>
         <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
         <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
+        <button onclick="toggleMemoryMap()">Toggle Memory Map</button>
       </div>
-      <div class="main-layout">
+      <div class="main-layout" id="mainLayout">
         <div class="sidebar-wrapper">
           <input type="text" id="treeSearch" placeholder="Search function traces..." onkeydown="if(event.key === 'Enter') searchTree(this.value)" />
           <div class="sidebar" id="tree-sidebar"></div>
@@ -68,18 +77,19 @@ export function getWebviewContent(data: LogDataPoint[]): string {
           <canvas id="logChart"></canvas>
         </div>
       </div>
+      <div class="memory-map-layout" id="memoryMapLayout">
+        <h2>Visual Memory Map</h2>
+        <div id="memory-map-container"></div>
+      </div>
 
       <script>
         const logData = ${JSON.stringify(data)};
+        const symbolsData = ${JSON.stringify(symbols)};
         const vscode = acquireVsCodeApi();
 
         let showExceptions = true;
         let showTlb = true;
         let showIo = true;
-
-        function loadSymbols() {
-          vscode.postMessage({ command: 'loadElf' });
-        }
 
         function toggleExceptions() {
           showExceptions = !showExceptions;
@@ -574,6 +584,175 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             window.myChart.options.scales.x.max = undefined;
             window.myChart.resetZoom();
           }
+        }
+
+        function toggleMemoryMap() {
+          const mainLayout = document.getElementById('mainLayout');
+          const memLayout = document.getElementById('memoryMapLayout');
+          if (mainLayout.style.display === 'none') {
+            mainLayout.style.display = 'flex';
+            memLayout.style.display = 'none';
+          } else {
+            mainLayout.style.display = 'none';
+            memLayout.style.display = 'block';
+            renderMemoryMap();
+          }
+        }
+
+        let mapZoom = 1.0;
+        function handleMapZoom(e) {
+          e.preventDefault();
+          let delta = e.deltaY > 0 ? -0.1 : 0.1;
+          if (mapZoom > 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
+          if (mapZoom > 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
+          mapZoom = Math.max(1.0, Math.min(30.0, mapZoom + delta));
+          
+          const inners = document.querySelectorAll('.map-inner');
+          inners.forEach(inner => {
+             // @ts-ignore
+             inner.style.width = (mapZoom * 100) + '%';
+          });
+        }
+
+        function renderMemoryMap() {
+          const container = document.getElementById('memory-map-container');
+          if (!container) return;
+          if (container.children.length > 0) return; // already rendered
+          
+          container.addEventListener('wheel', handleMapZoom, { passive: false });
+          
+          if (!symbolsData || symbolsData.length === 0) {
+            container.innerHTML = '<p><i>Please use the "Load ELF Symbols" button successfully before tracing Hardware Memory allocations!</i></p>';
+            return;
+          }
+
+          container.innerHTML = '';
+          const regions = { 'IMR': [], 'LPSRAM': [], 'HPSRAM': [] };
+          
+          symbolsData.forEach(sym => {
+            if (sym.size > 0) {
+              const prefix = sym.addr >>> 20; 
+              if (prefix === 0xA00) regions['HPSRAM'].push(sym);
+              else if (prefix === 0xA01 || prefix === 0xA10) {
+                // IMR is fixed around A1048000 structurally
+                if (sym.addr >= 0xA1040000 && sym.addr < 0xA1060000) regions['IMR'].push(sym);
+                else regions['LPSRAM'].push(sym);
+              }
+            }
+          });
+
+          for (const rName in regions) {
+            if (regions[rName].length === 0) continue;
+            let sumSize = 0;
+            regions[rName].forEach(s => sumSize += s.size);
+
+            const rDiv = document.createElement('div');
+            rDiv.className = 'memory-region';
+            const rTitle = document.createElement('h3');
+            rTitle.textContent = rName + ' (Total Explicit Load: ' + sumSize + ' bytes, Objects: ' + regions[rName].length + ')';
+            rDiv.appendChild(rTitle);
+
+            const blocksDiv = document.createElement('div');
+            blocksDiv.className = 'memory-blocks';
+            blocksDiv.style.display = 'block'; // Override flex, we will use individual bank rows natively
+            
+            const sorted = regions[rName].sort((a,b) => a.addr - b.addr);
+            
+            // Resolve boundary arrays
+            let minAddr = sorted[0].addr;
+            let maxAddr = sorted[sorted.length - 1].addr + sorted[sorted.length - 1].size;
+
+            if (rName === 'IMR') {
+              const bDiv = document.createElement('div');
+              bDiv.className = 'memory-bank';
+              bDiv.style.position = 'relative';
+              bDiv.style.height = '40px';
+              bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
+              bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
+              
+              const totalSize = maxAddr - minAddr || 1;
+              sorted.forEach(sym => {
+                const sb = createMemBlock(sym, minAddr, totalSize);
+                bDiv.appendChild(sb);
+              });
+              blocksDiv.appendChild(bDiv);
+            } else {
+              const bankSize = 65536; // 64KB Explicit Hardware Bank Array Constraints
+              minAddr = minAddr & ~(bankSize - 1); // Round strictly down to explicit aligned Bank boundaries
+              const bankCount = Math.ceil((maxAddr - minAddr) / bankSize);
+              
+              for (let idx = 0; idx < bankCount; idx++) {
+                const bankBase = minAddr + (idx * bankSize);
+                const bankLimit = bankBase + bankSize;
+                
+                // Locate explicitly intersecting symbols for this explicit hardware boundary
+                const insideBank = sorted.filter(s => s.addr < bankLimit && (s.addr + s.size) > bankBase);
+                if (insideBank.length === 0) continue; // Skip strictly empty hardware planes
+                
+                const bDiv = document.createElement('div');
+                bDiv.className = 'memory-bank';
+                bDiv.style.position = 'relative';
+                bDiv.style.height = '35px';
+                bDiv.style.marginBottom = '6px';
+                bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
+                bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
+                bDiv.title = rName + ' Bank ' + idx + ' (0x' + bankBase.toString(16).toUpperCase() + ')';
+                
+                insideBank.forEach(sym => {
+                  const sb = createMemBlock(sym, bankBase, bankSize);
+                  bDiv.appendChild(sb);
+                });
+                blocksDiv.appendChild(bDiv);
+              }
+            }
+            
+            const mapScroll = document.createElement('div');
+            mapScroll.className = 'map-scrollable';
+            const mapInner = document.createElement('div');
+            mapInner.className = 'map-inner';
+            mapInner.appendChild(blocksDiv);
+            mapScroll.appendChild(mapInner);
+            
+            rDiv.appendChild(mapScroll);
+            container.appendChild(rDiv);
+          }
+        }
+        
+        function createMemBlock(sym, baseAddr, planeSize) {
+           const sb = document.createElement('div');
+           sb.className = 'mem-block';
+           sb.style.position = 'absolute';
+           sb.style.height = '100%';
+           sb.style.backgroundColor = 'var(--vscode-editor-selectionBackground)';
+           sb.style.borderRight = '1px solid var(--vscode-editor-selectionForeground)';
+           sb.style.overflow = 'hidden';
+           sb.style.display = 'flex';
+           sb.style.alignItems = 'center';
+           sb.style.justifyContent = 'center';
+           sb.style.fontSize = '10px';
+           sb.style.color = 'var(--vscode-editor-foreground)';
+           sb.style.cursor = 'pointer';
+           
+           const offset = Math.max(0, sym.addr - baseAddr);
+           // Calculate mapped proportional explicit geometries strictly capping over structural frames
+           const visibleSize = Math.min(sym.size, planeSize - offset); 
+           
+           sb.style.left = ((offset / planeSize) * 100) + '%';
+           sb.style.width = ((visibleSize / planeSize) * 100) + '%';
+           
+           let titleText = sym.name + ' \\nAddr: 0x' + sym.addr.toString(16) + '\\nLayout Size: ' + sym.size + ' bytes';
+           if (sym.file) titleText += '\\nFile: ' + sym.file + ':' + (sym.line || 1);
+           sb.title = titleText;
+           
+           // Natively drop internal textual overlays truncating visually dense geometries
+           if (((visibleSize / planeSize) * 100) > 3) sb.textContent = sym.name; 
+           
+           if (sym.file) {
+             sb.onclick = () => {
+               vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+             };
+           }
+           return sb;
         }
       </script>
     </body>
