@@ -9,6 +9,8 @@ export interface LogDataPoint {
   iMiss: number | null;
   dMiss: number | null;
   callDepth: number | null;
+  excCause: number | null;
+  c: number | null;
 }
 
 export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
@@ -21,8 +23,8 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   const dataPoints: LogDataPoint[] = [];
 
   // Patterns
-  // [T:0x000023c2 ...]
-  const tRegex = /^\[T:(0x[0-9a-fA-F]+)\s.*\]/;
+  // Matches [T:0x... C:0x...] OR [c:0 T:0x... C:0x...]
+  const tRegex = /^\[(?:c:\d+\s+)?T:(0x[0-9a-fA-F]+)(?:\s+C:(0x[0-9a-fA-F]+))?/;
   // ps=0x0006002f or PS = 0x00060033
   const psRegex = /ps\s*=\s*(0x[0-9a-fA-F]+)/i;
   // Imiss=0 Dmiss=73728
@@ -30,6 +32,8 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   // FUNC ENTRY / FUNC RET
   const funcEntryRegex = /FUNC ENTRY:/;
   const funcRetRegex = /FUNC RET:/;
+  // Exceptions
+  const excRegex = /EXCCAUSE\s*=\s*(\d+)/;
 
   let currentUM: number | null = null;
   let currentRing: number | null = null;
@@ -37,13 +41,29 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   let currentIMiss: number | null = null;
   let currentDMiss: number | null = null;
   let currentCallDepth = 0;
+  let currentT = 0;
+  let currentC: number | null = null;
 
   for await (const line of rl) {
     const tMatch = line.match(tRegex);
-    if (!tMatch) continue;
+    if (tMatch) {
+      currentT = parseInt(tMatch[1], 16);
+      if (tMatch[2]) {
+        currentC = parseInt(tMatch[2], 16);
+      }
+    }
+    
+    if (!currentT) continue;
 
-    const currentT = parseInt(tMatch[1], 16);
     let changed = false;
+    let currentExc: number | null = null;
+
+    // Parse Exception
+    const excMatch = line.match(excRegex);
+    if (excMatch) {
+      currentExc = parseInt(excMatch[1], 10);
+      changed = true;
+    }
 
     // Parse FUNC ENTRY / RET
     if (funcEntryRegex.test(line)) {
@@ -91,7 +111,9 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
         intLevel: currentIntLevel,
         iMiss: currentIMiss,
         dMiss: currentDMiss,
-        callDepth: currentCallDepth
+        callDepth: currentCallDepth,
+        excCause: currentExc,
+        c: currentC
       });
     }
   }

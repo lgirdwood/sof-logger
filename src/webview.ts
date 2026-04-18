@@ -4,7 +4,7 @@ export function getWebviewContent(data: LogDataPoint[]): string {
   const umData = data.map(d => ({ x: d.t, y: d.um }));
   const ringData = data.map(d => ({ x: d.t, y: d.ring }));
   const intLevelData = data.map(d => ({ x: d.t, y: d.intLevel }));
-  const callDepthData = data.map(d => ({ x: d.t, y: d.callDepth }));
+  const callDepthData = data.map(d => ({ x: d.t, y: d.callDepth, exc: d.excCause }));
 
   const iMissData = data.map((d, i, arr) => {
     if (i === 0 || d.iMiss === null || arr[i - 1].iMiss === null) return { x: d.t, y: 0 };
@@ -14,6 +14,11 @@ export function getWebviewContent(data: LogDataPoint[]): string {
   const dMissData = data.map((d, i, arr) => {
     if (i === 0 || d.dMiss === null || arr[i - 1].dMiss === null) return { x: d.t, y: 0 };
     return { x: d.t, y: Math.max(0, d.dMiss - arr[i - 1].dMiss!) };
+  });
+
+  const cDeltaData = data.map((d, i, arr) => {
+    if (i === 0 || d.c === null || arr[i - 1].c === null) return { x: d.t, y: 0 };
+    return { x: d.t, y: Math.max(0, d.c - arr[i - 1].c!) };
   });
 
   return `
@@ -48,6 +53,16 @@ export function getWebviewContent(data: LogDataPoint[]): string {
         
         const datasets = [
           {
+            label: 'CCOUNT Delta',
+            data: ${JSON.stringify(cDeltaData)},
+            borderColor: 'rgb(201, 203, 207)',
+            backgroundColor: 'rgba(201, 203, 207, 0.1)',
+            yAxisID: 'yCDelta',
+            stepped: true,
+            borderWidth: 2,
+            tension: 0
+          },
+          {
             label: 'Call Depth',
             data: ${JSON.stringify(callDepthData)},
             borderColor: 'rgb(255, 205, 86)',
@@ -55,7 +70,10 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             yAxisID: 'yCallDepth',
             stepped: true,
             borderWidth: 2,
-            tension: 0
+            tension: 0,
+            pointRadius: function(context) { return context.raw?.exc !== null && context.raw?.exc !== undefined ? 5 : 0; },
+            pointBackgroundColor: 'red',
+            pointBorderColor: 'red'
           },
           {
             label: 'UM (User Mode)',
@@ -93,8 +111,9 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             borderColor: 'rgb(255, 99, 132)',
             backgroundColor: 'rgba(255, 99, 132, 0.1)',
             yAxisID: 'yIMiss',
+            stepped: true,
             borderWidth: 2,
-            tension: 0.1
+            tension: 0
           },
           {
             label: 'D-Cache Miss',
@@ -102,8 +121,9 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             borderColor: 'rgb(54, 162, 235)',
             backgroundColor: 'rgba(54, 162, 235, 0.1)',
             yAxisID: 'yDMiss',
+            stepped: true,
             borderWidth: 2,
-            tension: 0.1
+            tension: 0
           }
         ];
 
@@ -126,6 +146,20 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             plugins: {
               tooltip: {
                 animation: false,
+                callbacks: {
+                  label: function(context) {
+                    if (context.dataset.label === 'Call Depth') {
+                      if (context.raw.exc !== null && context.raw.exc !== undefined) {
+                        return 'Exception: EXCCAUSE ' + context.raw.exc;
+                      }
+                      return null; // Don't show call depth natively or if no exception at this tick
+                    }
+                    let label = context.dataset.label || '';
+                    if (label) label += ': ';
+                    if (context.parsed.y !== null) label += context.parsed.y;
+                    return label;
+                  }
+                }
               },
               legend: { position: 'top' },
               zoom: {
@@ -150,6 +184,11 @@ export function getWebviewContent(data: LogDataPoint[]): string {
                     return '0x' + Number(value).toString(16);
                   }
                 }
+              },
+              yCDelta: {
+                type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
+                title: { display: true, text: 'C-Delta' },
+                grid: { drawOnChartArea: true }
               },
               yCallDepth: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1.5,
