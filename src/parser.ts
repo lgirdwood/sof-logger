@@ -16,6 +16,10 @@ export interface LogDataPoint {
   ioType: 'read' | 'write' | null;
   ioDevice: string | null;
   ioDetails: string | null;
+  funcAddr?: number;
+  funcArgs?: string[];
+  funcRet?: string;
+  funcName?: string;
 }
 
 export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
@@ -34,9 +38,10 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   const psRegex = /\b(?:ps|PS)\s*=\s*(0x[0-9a-fA-F]+)/;
   // Imiss=0 Dmiss=73728
   const missRegex = /Imiss=(\d+)\s+Dmiss=(\d+)/i;
-  // FUNC ENTRY / FUNC RET
-  const funcEntryRegex = /FUNC ENTRY:/;
-  const funcRetRegex = /FUNC RET:/;
+  // FUNC ENTRY: pc=0xa10486f0 sp=0xa1042000 ps=0x0005002f a2=0x00000000 a3=0x00000000 a4=0x610485a0 a5=0xa1041fe0 a6=0x00000000 a7=0xa1040000
+  const funcEntryRegex = /FUNC ENTRY:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+a2=(0x[0-9a-fA-F]+)\s+a3=(0x[0-9a-fA-F]+)\s+a4=(0x[0-9a-fA-F]+)\s+a5=(0x[0-9a-fA-F]+)\s+a6=(0x[0-9a-fA-F]+)\s+a7=(0x[0-9a-fA-F]+)/;
+  // FUNC RET: pc=0xa10481c6 sp=0xa1041fe0 ps=0x0006002f a2=0x00000000
+  const funcRetRegex = /FUNC RET:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+a2=(0x[0-9a-fA-F]+)/;
   // Exceptions
   const excRegex = /EXCCAUSE\s*=\s*(\d+)/;
   // TLB Events: "TLB D lookup hit: addr=0x..."
@@ -96,13 +101,25 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
       changed = true;
     }
 
+    let currentFuncAddr: number | null = null;
+    let currentFuncArgs: string[] | null = null;
+    let currentFuncRet: string | null = null;
+
     // Parse FUNC ENTRY / RET
-    if (funcEntryRegex.test(line)) {
+    const entryMatch = line.match(funcEntryRegex);
+    if (entryMatch) {
       currentCallDepth++;
       changed = true;
-    } else if (funcRetRegex.test(line)) {
-      currentCallDepth = Math.max(0, currentCallDepth - 1);
-      changed = true;
+      currentFuncAddr = parseInt(entryMatch[1], 16);
+      currentFuncArgs = [entryMatch[4], entryMatch[5], entryMatch[6], entryMatch[7], entryMatch[8], entryMatch[9]];
+    } else {
+      const retMatch = line.match(funcRetRegex);
+      if (retMatch) {
+        currentCallDepth = Math.max(0, currentCallDepth - 1);
+        changed = true;
+        currentFuncAddr = parseInt(retMatch[1], 16);
+        currentFuncRet = retMatch[4];
+      }
     }
 
     // Parse PS
@@ -147,7 +164,10 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
         tlbDetails: currentTlbDetails,
         ioType: currentIoType,
         ioDevice: currentIoDevice,
-        ioDetails: currentIoDetails
+        ioDetails: currentIoDetails,
+        funcAddr: currentFuncAddr !== null ? currentFuncAddr : undefined,
+        funcArgs: currentFuncArgs !== null ? currentFuncArgs : undefined,
+        funcRet: currentFuncRet !== null ? currentFuncRet : undefined
       });
     }
   }

@@ -6,7 +6,7 @@ export function getWebviewContent(data: LogDataPoint[]): string {
   const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
   const ringData = data.map(d => ({ x: d.t / timeFactor, y: d.ring }));
   const intLevelData = data.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
-  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, tlbDetails: d.tlbDetails, ioType: d.ioType, ioDevice: d.ioDevice, ioDetails: d.ioDetails }));
+  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, tlbDetails: d.tlbDetails, ioType: d.ioType, ioDevice: d.ioDevice, ioDetails: d.ioDetails, funcAddr: d.funcAddr, funcArgs: d.funcArgs, funcRet: d.funcRet, funcName: d.funcName }));
 
   const iMissData = data.map((d, i, arr) => {
     if (i === 0 || d.iMiss === null || arr[i - 1].iMiss === null) return { x: d.t / timeFactor, y: 0 };
@@ -44,6 +44,7 @@ export function getWebviewContent(data: LogDataPoint[]): string {
     <body>
       <div class="toolbar">
         <h2>QEMU Log Execution</h2>
+        <button onclick="loadSymbols()">Load ELF Symbols</button>
         <button onclick="resetZoom()">Reset Zoom</button>
         <button id="toggleExceptionsBtn" onclick="toggleExceptions()">Toggle Exceptions (On)</button>
         <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
@@ -54,9 +55,15 @@ export function getWebviewContent(data: LogDataPoint[]): string {
       </div>
 
       <script>
+        const vscode = acquireVsCodeApi();
+
         let showExceptions = true;
         let showTlb = true;
         let showIo = true;
+
+        function loadSymbols() {
+          vscode.postMessage({ command: 'loadElf' });
+        }
 
         function toggleExceptions() {
           showExceptions = !showExceptions;
@@ -234,16 +241,28 @@ export function getWebviewContent(data: LogDataPoint[]): string {
                   },
                   label: function(context) {
                     if (context.dataset.label === 'Call Depth') {
+                      let base = '';
                       if (showExceptions && context.raw.exc !== null && context.raw.exc !== undefined) {
-                        return 'Exception: EXCCAUSE ' + context.raw.exc;
+                        base = 'Exception: EXCCAUSE ' + context.raw.exc;
+                      } else if (showTlb && context.raw.tlbType) {
+                        base = 'TLB ' + context.raw.tlbType + ' ' + (context.raw.tlbDetails || '');
+                      } else if (showIo && context.raw.ioType) {
+                        base = 'ACE IO: ' + (context.raw.ioDevice || '') + ' ' + context.raw.ioType.toUpperCase() + ' // ' + (context.raw.ioDetails || '');
                       }
-                      if (showTlb && context.raw.tlbType) {
-                        return 'TLB ' + context.raw.tlbType + ' ' + (context.raw.tlbDetails || '');
+
+                      let funcDesc = '';
+                      if (context.raw.funcAddr !== undefined) {
+                        const nameLabel = context.raw.funcName ? context.raw.funcName : '0x' + context.raw.funcAddr.toString(16);
+                        if (context.raw.funcArgs) {
+                          funcDesc = 'Entry: ' + nameLabel + '(a2=' + context.raw.funcArgs[0] + ', a3=' + context.raw.funcArgs[1] + ', a4=' + context.raw.funcArgs[2] + ', a5=' + context.raw.funcArgs[3] + ', a6=' + context.raw.funcArgs[4] + ', a7=' + context.raw.funcArgs[5] + ')';
+                        } else if (context.raw.funcRet) {
+                          funcDesc = 'Return: ' + nameLabel + ' -> a2=' + context.raw.funcRet;
+                        }
                       }
-                      if (showIo && context.raw.ioType) {
-                        return 'ACE IO: ' + (context.raw.ioDevice || '') + ' ' + context.raw.ioType.toUpperCase() + ' // ' + (context.raw.ioDetails || '');
-                      }
-                      return null; // Don't show call depth natively or if no exception at this tick
+
+                      if (base && funcDesc) return [base, funcDesc];
+                      if (funcDesc) return funcDesc;
+                      return base ? base : null;
                     }
                     let label = context.dataset.label || '';
                     if (label) label += ': ';
