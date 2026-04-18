@@ -699,6 +699,64 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
             return;
           }
 
+          // --- EXTRACT DYNAMIC ALLOCATIONS FROM LOG DATA ---
+          const coreStacks = {};
+          const heapAllocs = [];
+
+          function isAllocCall(name) {
+              if (!name) return false;
+              const n = name.toLowerCase();
+              return n.includes('alloc') && !n.includes('free');
+          }
+
+          function guessAllocSize(name, args) {
+             if (!args) return 0;
+             const n = name.toLowerCase();
+             const a = args.map(x => parseInt(x, 16) || 0);
+             if (n.includes('rmalloc_align')) return a[3] || a[1] || a[0];
+             if (n.includes('rmalloc')) return a[3] || a[1] || a[0];
+             if (n.includes('rballoc_align')) return a[2] || a[1] || a[0];
+             if (n.includes('rballoc')) return a[2] || a[1] || a[0];
+             if (n.includes('sys_heap_aligned_alloc')) return a[2] || a[1];
+             if (n.includes('sys_heap_alloc') || n.includes('z_malloc_heap')) return a[1] || a[0];
+             if (n.includes('rbrealloc') || n.includes('realloc')) return a[3] || a[2] || a[1];
+             return a[0];
+          }
+
+          logData.forEach(d => {
+             const core = d.c || 0;
+             if (!coreStacks[core]) coreStacks[core] = [];
+             
+             if (d.funcArgs) {
+                // Entry Trace
+                if (isAllocCall(d.funcName)) {
+                    coreStacks[core].push({ name: d.funcName, size: guessAllocSize(d.funcName, d.funcArgs) });
+                } else {
+                    coreStacks[core].push(null);
+                }
+             } else if (d.funcRet) {
+                // Exit Trace
+                const popped = coreStacks[core].pop();
+                if (popped && isAllocCall(d.funcName)) {
+                    const addr = parseInt(d.funcRet, 16);
+                    if (addr !== 0) {
+                        heapAllocs.push({
+                           addr: addr,
+                           size: Math.max(popped.size, 4), // Explicit lower bound mapping visualization dynamically
+                           name: 'Dyn [' + d.funcName + '] (' + popped.size + ' B)',
+                           sect: 'heap_dyn'
+                        });
+                    }
+                }
+             }
+          });
+
+          // Append uniquely compiled dynamic structures targeting ELF Map arrays seamlessly
+          heapAllocs.forEach(alloc => {
+             symbolsData.push(alloc);
+          });
+          // ----------------------------------------------------
+
           let regions = {};
           if (regionsMeta && regionsMeta.length > 0) {
              regionsMeta.forEach(r => { regions[r.name] = []; });
@@ -848,7 +906,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
            let fg = '#fff';
 
            // Explicitly intercept and mark Heap Allocations in High Contrast Red natively 
-           if (sym.name && sym.name.toLowerCase().includes('heap')) {
+           if (sym.sect === 'heap_dyn' || (sym.name && sym.name.toLowerCase().includes('heap'))) {
                bg = 'rgba(211, 47, 47, 0.9)'; // Red
                fg = '#fff';
            } else if (sym.sect === 'text') {
@@ -886,11 +944,20 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
            // Natively drop internal textual overlays truncating visually dense geometries
            if (((visibleSize / planeSize) * 100) > 3) sb.textContent = sym.name; 
            
-           if (sym.file) {
-             sb.onclick = () => {
-               vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
-             };
-           }
+           sb.onclick = (e) => {
+               e.stopPropagation();
+               if (sym.sect === 'heap_dyn' && sym.caller) {
+                   const callerSym = symbolsData.find(s => s.name === sym.caller);
+                   if (callerSym && callerSym.file) {
+                       vscode.postMessage({ command: 'openSource', file: callerSym.file, line: callerSym.line || 1 });
+                   } else if (sym.file) {
+                       vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+                   }
+               } else if (sym.file) {
+                   vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+               }
+           };
+
            return sb;
         }
       </script>
