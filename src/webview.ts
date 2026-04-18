@@ -832,14 +832,22 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
            sb.className = 'mem-block';
            sb.style.position = 'absolute';
            sb.style.height = '100%';
-           sb.style.backgroundColor = 'var(--vscode-editor-selectionBackground)';
-           sb.style.borderRight = '1px solid var(--vscode-editor-selectionForeground)';
+
+           let bg = 'var(--vscode-editor-selectionBackground)';
+           let fg = '#fff';
+           if (sym.sect === 'text') bg = 'rgba(25, 118, 210, 0.85)'; // Blue
+           else if (sym.sect === 'rodata') bg = 'rgba(56, 142, 60, 0.85)'; // Green
+           else if (sym.sect === 'data') { bg = 'rgba(129, 199, 132, 0.85)'; fg = '#000'; } // Light Green
+           else if (sym.sect === 'bss') bg = 'rgba(123, 31, 162, 0.85)'; // Purple
+
+           sb.style.backgroundColor = bg;
+           sb.style.borderRight = '1px solid rgba(255,255,255,0.3)';
            sb.style.overflow = 'hidden';
            sb.style.display = 'flex';
            sb.style.alignItems = 'center';
            sb.style.justifyContent = 'center';
            sb.style.fontSize = '10px';
-           sb.style.color = 'var(--vscode-editor-foreground)';
+           sb.style.color = fg;
            sb.style.cursor = 'pointer';
            
            const offset = Math.max(0, sym.addr - baseAddr);

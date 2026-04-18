@@ -27,7 +27,7 @@ export function activate(context: vscode.ExtensionContext) {
               resolve();
               return;
             }
-            const symbols: {addr: number, size: number, name: string, file?: string, line?: number}[] = [];
+            const symbols: {addr: number, size: number, name: string, file?: string, line?: number, sect?: string}[] = [];
             const lines = stdout.split('\n');
             for (const rawLine of lines) {
               const rawParts = rawLine.trim().split(/\t/);
@@ -46,22 +46,30 @@ export function activate(context: vscode.ExtensionContext) {
                  }
               }
 
-              if (parts.length >= 4 && parts[2].toLowerCase() === 't') {
-                symbols.push({
-                  addr: parseInt(parts[0], 16),
-                  size: parseInt(parts[1], 16),
-                  name: parts[3],
-                  file: file,
-                  line: lineNum
-                });
-              } else if (parts.length === 3 && parts[1].toLowerCase() === 't') {
-                symbols.push({
-                  addr: parseInt(parts[0], 16),
-                  size: 0,
-                  name: parts[2],
-                  file: file,
-                  line: lineNum
-                });
+              let addrStr, sizeStr, typeChar, nameStr;
+              if (parts.length >= 4) {
+                 addrStr = parts[0]; sizeStr = parts[1]; typeChar = parts[2]; nameStr = parts[3];
+              } else if (parts.length === 3) {
+                 addrStr = parts[0]; sizeStr = "0"; typeChar = parts[1]; nameStr = parts[2];
+              } else {
+                 continue;
+              }
+              
+              const tChar = typeChar.toLowerCase();
+              if (['t', 'w', 'b', 'd', 'r', 'c', 'v', 'g', 'a'].includes(tChar)) {
+                  let sect = 'text';
+                  if (tChar === 'r') sect = 'rodata';
+                  else if (tChar === 'd' || tChar === 'v' || tChar === 'g') sect = 'data';
+                  else if (tChar === 'b' || tChar === 'c') sect = 'bss';
+                  
+                  symbols.push({
+                    addr: parseInt(addrStr, 16),
+                    size: parseInt(sizeStr, 16),
+                    name: nameStr,
+                    file: file,
+                    line: lineNum,
+                    sect: sect
+                  });
               }
             }
 
