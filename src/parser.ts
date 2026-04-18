@@ -172,14 +172,5 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
     }
   }
 
-  // Deduplicate points with the exact same 'T' (keep latest values)
-  const uniquePoints: LogDataPoint[] = [];
-  for (let i = 0; i < dataPoints.length; i++) {
-    if (i < dataPoints.length - 1 && dataPoints[i].t === dataPoints[i + 1].t) {
-      continue;
-    }
-    uniquePoints.push(dataPoints[i]);
-  }
-
-  return uniquePoints;
+  return dataPoints;
 }

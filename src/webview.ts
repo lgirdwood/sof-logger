@@ -34,11 +34,16 @@ export function getWebviewContent(data: LogDataPoint[]): string {
       <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
       <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
       <style>
-        body { padding: 10px; font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); background-color: var(--vscode-editor-background); }
-        .chart-container { position: relative; height: 85vh; width: 100vw; }
+        body { padding: 10px; font-family: var(--vscode-font-family); color: var(--vscode-editor-foreground); background-color: var(--vscode-editor-background); overflow: hidden; }
         .toolbar { margin-bottom: 10px; }
         button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 12px; cursor: pointer; }
         button:hover { background: var(--vscode-button-hoverBackground); }
+        .main-layout { display: flex; width: 100vw; height: 85vh; }
+        .sidebar { width: 30%; height: 100%; overflow-y: auto; border-right: 1px solid var(--vscode-panel-border); padding: 5px; box-sizing: border-box; }
+        .chart-container { width: 70%; height: 100%; position: relative; }
+        details { margin-left: 12px; }
+        summary { font-family: monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px; user-select: none; }
+        summary:hover { background: var(--vscode-list-hoverBackground); }
       </style>
     </head>
     <body>
@@ -50,11 +55,15 @@ export function getWebviewContent(data: LogDataPoint[]): string {
         <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
         <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
       </div>
-      <div class="chart-container">
-        <canvas id="logChart"></canvas>
+      <div class="main-layout">
+        <div class="sidebar" id="tree-sidebar"></div>
+        <div class="chart-container">
+          <canvas id="logChart"></canvas>
+        </div>
       </div>
 
       <script>
+        const logData = ${JSON.stringify(data)};
         const vscode = acquireVsCodeApi();
 
         let showExceptions = true;
@@ -349,8 +358,64 @@ export function getWebviewContent(data: LogDataPoint[]): string {
           }
         });
 
+
+        function renderSidebar() {
+          const sidebar = document.getElementById('tree-sidebar');
+          if (!sidebar) return;
+          const root = document.createElement('div');
+          
+          let stack = [root];
+          
+          for (let i = 0; i < logData.length; i++) {
+            const p = logData[i];
+            if (p.funcAddr !== undefined) {
+              if (p.funcArgs) {
+                const nameLabel = p.funcName ? p.funcName : '0x' + p.funcAddr.toString(16);
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                
+                summary.textContent = nameLabel + ' (a2...a7: ' + p.funcArgs.join(', ') + ')';
+                summary.onclick = (e) => {
+                  if (window.myChart) {
+                    const start = p.t / 38420000.0;
+                    let end = start + (1000 / 38420000.0);
+                    if (details.dataset.endT) {
+                      end = parseFloat(details.dataset.endT) / 38420000.0;
+                    }
+                    const buffer = (end - start) * 0.1 || 0.000001;
+                    window.myChart.options.scales.x.min = start - buffer;
+                    window.myChart.options.scales.x.max = end + buffer;
+                    window.myChart.update();
+                  }
+                };
+
+                details.appendChild(summary);
+                details.dataset.startT = p.t;
+                
+                stack[stack.length - 1].appendChild(details);
+                stack.push(details);
+              } else if (p.funcRet) {
+                if (stack.length > 1) {
+                  const currentDetails = stack.pop();
+                  currentDetails.dataset.endT = p.t;
+                  const sum = currentDetails.querySelector('summary');
+                  if (sum) {
+                    sum.textContent += ' -> a2=' + p.funcRet;
+                  }
+                }
+              }
+            }
+          }
+          sidebar.appendChild(root);
+        }
+
+        // Initialize Call-Stack sidebar automatically
+        renderSidebar();
+
         function resetZoom() {
           if (window.myChart) {
+            window.myChart.options.scales.x.min = undefined;
+            window.myChart.options.scales.x.max = undefined;
             window.myChart.resetZoom();
           }
         }
