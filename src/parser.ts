@@ -21,8 +21,12 @@ export interface LogDataPoint {
   funcRet?: string;
   funcName?: string;
 }
+export interface ParseResult {
+  dataPoints: LogDataPoint[];
+  elfPath: string | null;
+}
 
-export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
+export async function parseLogFile(filePath: string): Promise<ParseResult> {
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
     input: fileStream,
@@ -46,9 +50,11 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   const excRegex = /EXCCAUSE\s*=\s*(\d+)/;
   // TLB Events: "TLB D lookup hit: addr=0x..."
   const tlbRegex = /\bTLB\s+([ID])\s+(.*)/i;
-  // IO Events: "DSPCS read: addr=0x50 size=4 val=0x0"
   const ioRegex = /\b([A-Za-z0-9_]+)\s+(read|write):\s+(.*)/i;
+  // Firmware Linkage
+  const firmwareRegex = /Loading\s+DSP\s+Firmware:\s+(.+)/i;
 
+  let currentElfPath: string | null = null;
   let currentUM: number | null = null;
   let currentRing: number | null = null;
   let currentIntLevel: number | null = null;
@@ -66,8 +72,6 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
         currentC = parseInt(tMatch[2], 16);
       }
     }
-    
-    if (!currentT) continue;
 
     let changed = false;
     let currentExc: number | null = null;
@@ -123,7 +127,12 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
     }
 
     // Parse PS
-    const psMatch = line.match(psRegex);
+      const firmwareMatch = line.match(firmwareRegex);
+      if (firmwareMatch) {
+        currentElfPath = firmwareMatch[1].trim();
+      }
+
+      const psMatch = line.match(psRegex);
     if (psMatch) {
       const psVal = parseInt(psMatch[1], 16);
       const intLevel = psVal & 0xF;
@@ -172,5 +181,5 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
     }
   }
 
-  return dataPoints;
+  return { dataPoints, elfPath: currentElfPath };
 }

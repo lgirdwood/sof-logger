@@ -13,8 +13,81 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
+    async function resolveElfSymbols(elfPath: string, logData: any[]) {
+      return new Promise<void>((resolve) => {
+        const cp = require('child_process');
+        cp.exec(`nm -nS ${elfPath}`, { maxBuffer: 1024 * 1024 * 50 }, (error: any, stdout: string) => {
+          if (error) {
+            vscode.window.showErrorMessage('Error reading elf: ' + error.message);
+            resolve();
+            return;
+          }
+          const symbols: {addr: number, size: number, name: string}[] = [];
+          const lines = stdout.split('\n');
+          for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 4 && parts[2].toLowerCase() === 't') {
+              symbols.push({
+                addr: parseInt(parts[0], 16),
+                size: parseInt(parts[1], 16),
+                name: parts[3]
+              });
+            } else if (parts.length === 3 && parts[1].toLowerCase() === 't') {
+              symbols.push({
+                addr: parseInt(parts[0], 16),
+                size: 0,
+                name: parts[2]
+              });
+            }
+          }
+
+          for (const d of logData) {
+            if (d.funcAddr !== undefined) {
+              const addr = d.funcAddr;
+              let low = 0, high = symbols.length - 1;
+              let closestIndex = -1;
+              while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+                if (symbols[mid].addr <= addr) {
+                  closestIndex = mid;
+                  low = mid + 1;
+                } else {
+                  high = mid - 1;
+                }
+              }
+              if (closestIndex !== -1) {
+                const sym = symbols[closestIndex];
+                if (sym.size > 0 && addr >= sym.addr + sym.size) {
+                  // outside strictly bound size
+                } else {
+                  d.funcName = sym.name;
+                }
+              }
+            }
+          }
+          vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
+          resolve();
+        });
+      });
+    }
+
     try {
-      const logData = await parseLogFile(logFilePath);
+      const parseResult = await parseLogFile(logFilePath);
+      const logData = parseResult.dataPoints;
+
+      let targetElfPath = parseResult.elfPath;
+      if (targetElfPath && targetElfPath.endsWith('.ri')) {
+        targetElfPath = targetElfPath.replace(/\.ri$/i, '.elf');
+      }
+
+      if (!targetElfPath) {
+        vscode.window.showWarningMessage('ParseResult failed to find any ELF strings in QEMU log!');
+      } else if (!fs.existsSync(targetElfPath)) {
+        vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
+      } else {
+        await resolveElfSymbols(targetElfPath, logData);
+        vscode.window.showInformationMessage('Successfully fired auto-loader on: ' + targetElfPath);
+      }
 
       // Create and show the webview
       const panel = vscode.window.createWebviewPanel(
@@ -36,60 +109,8 @@ export function activate(context: vscode.ExtensionContext) {
             filters: { 'ELF files': ['elf'] }
           });
           if (uris && uris[0]) {
-            const cp = require('child_process');
-            cp.exec(`nm -nS ${uris[0].fsPath}`, { maxBuffer: 1024 * 1024 * 50 }, (error: any, stdout: string) => {
-              if (error) {
-                vscode.window.showErrorMessage('Error reading elf: ' + error.message);
-                return;
-              }
-              const symbols: {addr: number, size: number, name: string}[] = [];
-              const lines = stdout.split('\n');
-              for (const line of lines) {
-                const parts = line.trim().split(/\s+/);
-                if (parts.length >= 4 && parts[2].toLowerCase() === 't') {
-                  symbols.push({
-                    addr: parseInt(parts[0], 16),
-                    size: parseInt(parts[1], 16),
-                    name: parts[3]
-                  });
-                } else if (parts.length === 3 && parts[1].toLowerCase() === 't') {
-                  symbols.push({
-                    addr: parseInt(parts[0], 16),
-                    size: 0,
-                    name: parts[2]
-                  });
-                }
-              }
-
-              // Resolve addresses iteratively
-              for (const d of logData) {
-                if (d.funcAddr !== undefined) {
-                  const addr = d.funcAddr;
-                  let low = 0, high = symbols.length - 1;
-                  let closestIndex = -1;
-                  while (low <= high) {
-                    const mid = Math.floor((low + high) / 2);
-                    if (symbols[mid].addr <= addr) {
-                      closestIndex = mid;
-                      low = mid + 1;
-                    } else {
-                      high = mid - 1;
-                    }
-                  }
-                  if (closestIndex !== -1) {
-                    const sym = symbols[closestIndex];
-                    if (sym.size > 0 && addr >= sym.addr + sym.size) {
-                      // outside strictly bound size
-                    } else {
-                      d.funcName = sym.name;
-                    }
-                  }
-                }
-              }
-              
-              panel.webview.html = getWebviewContent(logData);
-              vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols!');
-            });
+            await resolveElfSymbols(uris[0].fsPath, logData);
+            panel.webview.html = getWebviewContent(logData);
           }
         }
       });

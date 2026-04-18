@@ -39,11 +39,14 @@ export function getWebviewContent(data: LogDataPoint[]): string {
         button { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border: none; padding: 6px 12px; cursor: pointer; }
         button:hover { background: var(--vscode-button-hoverBackground); }
         .main-layout { display: flex; width: 100vw; height: 85vh; }
-        .sidebar { width: 30%; height: 100%; overflow-y: auto; border-right: 1px solid var(--vscode-panel-border); padding: 5px; box-sizing: border-box; }
+        .sidebar-wrapper { width: 30%; height: 100%; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); }
+        .sidebar { flex-grow: 1; overflow-y: auto; padding: 5px; box-sizing: border-box; }
+        #treeSearch { width: 100%; box-sizing: border-box; margin-bottom: 5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px; }
         .chart-container { width: 70%; height: 100%; position: relative; }
         details { margin-left: 12px; }
         summary { font-family: monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px; user-select: none; }
         summary:hover { background: var(--vscode-list-hoverBackground); }
+        summary.selected { background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
       </style>
     </head>
     <body>
@@ -56,7 +59,10 @@ export function getWebviewContent(data: LogDataPoint[]): string {
         <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
       </div>
       <div class="main-layout">
-        <div class="sidebar" id="tree-sidebar"></div>
+        <div class="sidebar-wrapper">
+          <input type="text" id="treeSearch" placeholder="Search function traces..." onkeydown="if(event.key === 'Enter') searchTree(this.value)" />
+          <div class="sidebar" id="tree-sidebar"></div>
+        </div>
         <div class="chart-container">
           <canvas id="logChart"></canvas>
         </div>
@@ -376,6 +382,10 @@ export function getWebviewContent(data: LogDataPoint[]): string {
                 
                 summary.textContent = nameLabel + ' (a2...a7: ' + p.funcArgs.join(', ') + ')';
                 summary.onclick = (e) => {
+                  const prev = document.querySelector('summary.selected');
+                  if (prev) prev.classList.remove('selected');
+                  summary.classList.add('selected');
+
                   if (window.myChart) {
                     const start = p.t / 38420000.0;
                     let end = start + (1000 / 38420000.0);
@@ -411,6 +421,51 @@ export function getWebviewContent(data: LogDataPoint[]): string {
 
         // Initialize Call-Stack sidebar automatically
         renderSidebar();
+
+        function searchTree(query) {
+          query = query.toLowerCase();
+          const tree = document.getElementById('tree-sidebar');
+          if (!tree) return;
+          
+          function traverse(node) {
+            if (node.tagName === 'SUMMARY') return false;
+            if (node.tagName === 'DETAILS') {
+              const summary = node.querySelector('summary');
+              const text = summary ? summary.textContent.toLowerCase() : '';
+              let matches = text.includes(query);
+              
+              const children = node.children;
+              for (let i = 0; i < children.length; i++) {
+                if (children[i].tagName === 'DETAILS') {
+                  const childMatches = traverse(children[i]);
+                  if (childMatches) matches = true;
+                }
+              }
+              
+              node.style.display = matches ? '' : 'none';
+              if (query && matches) node.open = true;
+              return matches;
+            }
+            
+            let anyMatch = false;
+            const children = node.children;
+            for (let i = 0; i < children.length; i++) {
+              if (children[i].tagName === 'DETAILS') {
+                if (traverse(children[i])) anyMatch = true;
+              }
+            }
+            return anyMatch;
+          }
+          
+          if (tree.firstChild) traverse(tree.firstChild);
+
+          if (!query) {
+            const selected = document.querySelector('summary.selected');
+            if (selected) {
+              selected.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+          }
+        }
 
         function resetZoom() {
           if (window.myChart) {
