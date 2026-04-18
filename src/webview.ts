@@ -1,24 +1,26 @@
 import { LogDataPoint } from './parser';
 
 export function getWebviewContent(data: LogDataPoint[]): string {
-  const umData = data.map(d => ({ x: d.t, y: d.um }));
-  const ringData = data.map(d => ({ x: d.t, y: d.ring }));
-  const intLevelData = data.map(d => ({ x: d.t, y: d.intLevel }));
-  const callDepthData = data.map(d => ({ x: d.t, y: d.callDepth, exc: d.excCause }));
+  const timeFactor = 38420000.0;
+  
+  const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
+  const ringData = data.map(d => ({ x: d.t / timeFactor, y: d.ring }));
+  const intLevelData = data.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
+  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, tlbDetails: d.tlbDetails, ioType: d.ioType, ioDevice: d.ioDevice, ioDetails: d.ioDetails }));
 
   const iMissData = data.map((d, i, arr) => {
-    if (i === 0 || d.iMiss === null || arr[i - 1].iMiss === null) return { x: d.t, y: 0 };
-    return { x: d.t, y: Math.max(0, d.iMiss - arr[i - 1].iMiss!) };
+    if (i === 0 || d.iMiss === null || arr[i - 1].iMiss === null) return { x: d.t / timeFactor, y: 0 };
+    return { x: d.t / timeFactor, y: Math.max(0, d.iMiss - arr[i - 1].iMiss!) };
   });
 
   const dMissData = data.map((d, i, arr) => {
-    if (i === 0 || d.dMiss === null || arr[i - 1].dMiss === null) return { x: d.t, y: 0 };
-    return { x: d.t, y: Math.max(0, d.dMiss - arr[i - 1].dMiss!) };
+    if (i === 0 || d.dMiss === null || arr[i - 1].dMiss === null) return { x: d.t / timeFactor, y: 0 };
+    return { x: d.t / timeFactor, y: Math.max(0, d.dMiss - arr[i - 1].dMiss!) };
   });
 
   const cDeltaData = data.map((d, i, arr) => {
-    if (i === 0 || d.c === null || arr[i - 1].c === null) return { x: d.t, y: 0 };
-    return { x: d.t, y: Math.max(0, d.c - arr[i - 1].c!) };
+    if (i === 0 || d.c === null || arr[i - 1].c === null) return { x: d.t / timeFactor, y: 0 };
+    return { x: d.t / timeFactor, y: Math.max(0, d.c - arr[i - 1].c!) };
   });
 
   return `
@@ -43,12 +45,37 @@ export function getWebviewContent(data: LogDataPoint[]): string {
       <div class="toolbar">
         <h2>QEMU Log Execution</h2>
         <button onclick="resetZoom()">Reset Zoom</button>
+        <button id="toggleExceptionsBtn" onclick="toggleExceptions()">Toggle Exceptions (On)</button>
+        <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
+        <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
       </div>
       <div class="chart-container">
         <canvas id="logChart"></canvas>
       </div>
 
       <script>
+        let showExceptions = true;
+        let showTlb = true;
+        let showIo = true;
+
+        function toggleExceptions() {
+          showExceptions = !showExceptions;
+          document.getElementById('toggleExceptionsBtn').innerText = 'Toggle Exceptions (' + (showExceptions ? 'On' : 'Off') + ')';
+          window.myChart.update();
+        }
+
+        function toggleTlb() {
+          showTlb = !showTlb;
+          document.getElementById('toggleTlbBtn').innerText = 'Toggle TLB Events (' + (showTlb ? 'On' : 'Off') + ')';
+          window.myChart.update();
+        }
+
+        function toggleIo() {
+          showIo = !showIo;
+          document.getElementById('toggleIoBtn').innerText = 'Toggle ACE IO (' + (showIo ? 'On' : 'Off') + ')';
+          window.myChart.update();
+        }
+
         const ctx = document.getElementById('logChart').getContext('2d');
         
         const datasets = [
@@ -71,9 +98,34 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             stepped: true,
             borderWidth: 2,
             tension: 0,
-            pointRadius: function(context) { return context.raw?.exc !== null && context.raw?.exc !== undefined ? 5 : 0; },
-            pointBackgroundColor: 'red',
-            pointBorderColor: 'red'
+            pointStyle: function(context) {
+              if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 'circle';
+              if (showTlb && context.raw?.tlbType) return 'triangle';
+              if (showIo && context.raw?.ioType) return 'rect';
+              return 'circle';
+            },
+            pointRadius: function(context) { 
+              if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 5;
+              if (showTlb && context.raw?.tlbType) return 4;
+              if (showIo && context.raw?.ioType) return 4;
+              return 0; 
+            },
+            pointBackgroundColor: function(context) { 
+              if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 'red';
+              if (showTlb && context.raw?.tlbType === 'D') return 'purple';
+              if (showTlb && context.raw?.tlbType === 'I') return 'plum';
+              if (showIo && context.raw?.ioType === 'read') return 'green';
+              if (showIo && context.raw?.ioType === 'write') return 'blue';
+              return 'rgba(0,0,0,0)';
+            },
+            pointBorderColor: function(context) { 
+              if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 'red';
+              if (showTlb && context.raw?.tlbType === 'D') return 'purple';
+              if (showTlb && context.raw?.tlbType === 'I') return 'plum';
+              if (showIo && context.raw?.ioType === 'read') return 'green';
+              if (showIo && context.raw?.ioType === 'write') return 'blue';
+              return 'rgba(0,0,0,0)';
+            }
           },
           {
             label: 'UM (User Mode)',
@@ -127,8 +179,32 @@ export function getWebviewContent(data: LogDataPoint[]): string {
           }
         ];
 
+        const verticalLinePlugin = {
+          id: 'verticalLine',
+          afterDraw: chart => {
+            if (chart.tooltip?._active && chart.tooltip._active.length) {
+              const activePoint = chart.tooltip._active[0];
+              const ctx = chart.ctx;
+              const x = activePoint.element.x;
+              const topY = chart.chartArea.top;
+              const bottomY = chart.chartArea.bottom;
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.moveTo(x, topY);
+              ctx.lineTo(x, bottomY);
+              ctx.lineWidth = 1;
+              ctx.strokeStyle = 'rgba(128, 128, 128, 0.8)';
+              ctx.setLineDash([3, 3]);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+        };
+
         window.myChart = new Chart(ctx, {
           type: 'line',
+          plugins: [verticalLinePlugin],
           data: {
             datasets: datasets
           },
@@ -147,10 +223,25 @@ export function getWebviewContent(data: LogDataPoint[]): string {
               tooltip: {
                 animation: false,
                 callbacks: {
+                  title: function(context) {
+                    if (!context.length) return '';
+                    const val = context[0].parsed.x;
+                    const totalMicroseconds = Math.floor(val * 1000000);
+                    const ss = Math.floor(totalMicroseconds / 1000000);
+                    const mmm = Math.floor((totalMicroseconds % 1000000) / 1000);
+                    const uuu = totalMicroseconds % 1000;
+                    return String(ss).padStart(2, '0') + ':' + String(mmm).padStart(3, '0') + ':' + String(uuu).padStart(3, '0');
+                  },
                   label: function(context) {
                     if (context.dataset.label === 'Call Depth') {
-                      if (context.raw.exc !== null && context.raw.exc !== undefined) {
+                      if (showExceptions && context.raw.exc !== null && context.raw.exc !== undefined) {
                         return 'Exception: EXCCAUSE ' + context.raw.exc;
+                      }
+                      if (showTlb && context.raw.tlbType) {
+                        return 'TLB ' + context.raw.tlbType + ' ' + (context.raw.tlbDetails || '');
+                      }
+                      if (showIo && context.raw.ioType) {
+                        return 'ACE IO: ' + (context.raw.ioDevice || '') + ' ' + context.raw.ioType.toUpperCase() + ' // ' + (context.raw.ioDetails || '');
                       }
                       return null; // Don't show call depth natively or if no exception at this tick
                     }
@@ -178,10 +269,14 @@ export function getWebviewContent(data: LogDataPoint[]): string {
             scales: {
               x: {
                 type: 'linear',
-                title: { display: true, text: 'Time (T)' },
+                title: { display: true, text: 'Time (ss:mmm:uuu)' },
                 ticks: {
                   callback: function(value) {
-                    return '0x' + Number(value).toString(16);
+                    const totalMicroseconds = Math.floor(value * 1000000);
+                    const ss = Math.floor(totalMicroseconds / 1000000);
+                    const mmm = Math.floor((totalMicroseconds % 1000000) / 1000);
+                    const uuu = totalMicroseconds % 1000;
+                    return String(ss).padStart(2, '0') + ':' + String(mmm).padStart(3, '0') + ':' + String(uuu).padStart(3, '0');
                   }
                 }
               },
@@ -208,19 +303,19 @@ export function getWebviewContent(data: LogDataPoint[]): string {
               },
               yIntLevel: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
-                title: { display: true, text: 'INT' }, suggestedMin: 0, suggestedMax: 16,
+                title: { display: true, text: 'INT' }, min: 0, max: 16,
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
               yRing: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
-                title: { display: true, text: 'RING' }, suggestedMin: 0, suggestedMax: 4,
+                title: { display: true, text: 'RING' }, min: 0, max: 4,
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
               yUM: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
-                title: { display: true, text: 'UM' }, suggestedMin: 0, suggestedMax: 1.5,
+                title: { display: true, text: 'UM' }, min: 0, max: 1.5,
                 grid: { drawOnChartArea: true },
                 ticks: { 
                   stepSize: 1,

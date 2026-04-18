@@ -11,6 +11,11 @@ export interface LogDataPoint {
   callDepth: number | null;
   excCause: number | null;
   c: number | null;
+  tlbType: 'I' | 'D' | null;
+  tlbDetails: string | null;
+  ioType: 'read' | 'write' | null;
+  ioDevice: string | null;
+  ioDetails: string | null;
 }
 
 export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
@@ -34,6 +39,10 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   const funcRetRegex = /FUNC RET:/;
   // Exceptions
   const excRegex = /EXCCAUSE\s*=\s*(\d+)/;
+  // TLB Events: "TLB D lookup hit: addr=0x..."
+  const tlbRegex = /\bTLB\s+([ID])\s+(.*)/i;
+  // IO Events: "DSPCS read: addr=0x50 size=4 val=0x0"
+  const ioRegex = /\b([A-Za-z0-9_]+)\s+(read|write):\s+(.*)/i;
 
   let currentUM: number | null = null;
   let currentRing: number | null = null;
@@ -57,6 +66,28 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
 
     let changed = false;
     let currentExc: number | null = null;
+    let currentTlbType: 'I' | 'D' | null = null;
+    let currentTlbDetails: string | null = null;
+    let currentIoType: 'read' | 'write' | null = null;
+    let currentIoDevice: string | null = null;
+    let currentIoDetails: string | null = null;
+
+    // Parse IO event
+    const ioMatch = line.match(ioRegex);
+    if (ioMatch) {
+      currentIoDevice = ioMatch[1];
+      currentIoType = ioMatch[2].toLowerCase() as 'read' | 'write';
+      currentIoDetails = ioMatch[3];
+      changed = true;
+    }
+
+    // Parse TLB event
+    const tlbMatch = line.match(tlbRegex);
+    if (tlbMatch) {
+      currentTlbType = tlbMatch[1].toUpperCase() as 'I' | 'D';
+      currentTlbDetails = tlbMatch[2];
+      changed = true;
+    }
 
     // Parse Exception
     const excMatch = line.match(excRegex);
@@ -113,7 +144,12 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
         dMiss: currentDMiss,
         callDepth: currentCallDepth,
         excCause: currentExc,
-        c: currentC
+        c: currentC,
+        tlbType: currentTlbType,
+        tlbDetails: currentTlbDetails,
+        ioType: currentIoType,
+        ioDevice: currentIoDevice,
+        ioDetails: currentIoDetails
       });
     }
   }
