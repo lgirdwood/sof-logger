@@ -31,7 +31,7 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
   // Matches [T:0x... C:0x...] OR [c:0 T:0x... C:0x...]
   const tRegex = /^\[(?:c:\d+\s+)?T:(0x[0-9a-fA-F]+)(?:\s+C:(0x[0-9a-fA-F]+))?/;
   // ps=0x0006002f or PS = 0x00060033
-  const psRegex = /ps\s*=\s*(0x[0-9a-fA-F]+)/i;
+  const psRegex = /\b(?:ps|PS)\s*=\s*(0x[0-9a-fA-F]+)/;
   // Imiss=0 Dmiss=73728
   const missRegex = /Imiss=(\d+)\s+Dmiss=(\d+)/i;
   // FUNC ENTRY / FUNC RET
@@ -113,12 +113,10 @@ export async function parseLogFile(filePath: string): Promise<LogDataPoint[]> {
       const um = (psVal >> 5) & 0x1;
       const ring = (psVal >> 6) & 0x3;
 
-      if (currentIntLevel !== intLevel || currentUM !== um || currentRing !== ring) {
-        currentIntLevel = intLevel;
-        currentUM = um;
-        currentRing = ring;
-        changed = true;
-      }
+      currentIntLevel = intLevel;
+      currentUM = um;
+      currentRing = ring;
+      changed = true;
     }
 
     // Parse Cache Misses
