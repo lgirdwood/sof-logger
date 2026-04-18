@@ -57,6 +57,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         .memory-bank { border: 1px solid var(--vscode-editorGroup-border); margin-bottom: 8px; position: relative; background: var(--vscode-editor-background); height: 35px; box-sizing: border-box; overflow: hidden; background-image: repeating-linear-gradient(to right, transparent, transparent calc(6.25% - 1px), var(--vscode-editorGroup-border) 6.25%); }
         .mem-block { position: absolute; height: 100%; background: var(--vscode-editor-selectionBackground); border-right: 1px solid var(--vscode-editor-selectionForeground); overflow: hidden; font-size: 10px; display: flex; align-items: center; justify-content: center; color: var(--vscode-editor-foreground); cursor: pointer; box-sizing: border-box; }
         .mem-block:hover { background: var(--vscode-list-hoverBackground); }
+        .memory-map-layout::-webkit-scrollbar { display: none; }
+        .map-scrollable::-webkit-scrollbar { display: none; }
+        .memory-map-layout { -ms-overflow-style: none; scrollbar-width: none; }
+        .map-scrollable { -ms-overflow-style: none; scrollbar-width: none; }
       </style>
     </head>
     <body>
@@ -606,12 +610,32 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           let delta = e.deltaY > 0 ? -0.1 : 0.1;
           if (mapZoom > 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
           if (mapZoom > 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
-          mapZoom = Math.max(1.0, Math.min(30.0, mapZoom + delta));
+          
+          const newZoom = Math.max(1.0, Math.min(30.0, mapZoom + delta));
+          if (newZoom === mapZoom) return;
+          
+          const allData = Array.from(document.querySelectorAll('.map-scrollable')).map(scrollable => {
+             const rect = scrollable.getBoundingClientRect();
+             const pX = e.clientX - rect.left;
+             const oldScroll = scrollable.scrollLeft;
+             const mapInner = scrollable.querySelector('.map-inner');
+             const oldWidth = mapInner ? mapInner.offsetWidth : 1;
+             return { scrollable, pX, oldScroll, mapInner, oldWidth };
+          });
+
+          mapZoom = newZoom;
           
           const inners = document.querySelectorAll('.map-inner');
           inners.forEach(inner => {
              // @ts-ignore
              inner.style.width = (mapZoom * 100) + '%';
+          });
+          
+          allData.forEach(d => {
+             if (!d.mapInner) return;
+             const newWidth = d.mapInner.offsetWidth;
+             const ratio = (d.oldScroll + d.pX) / d.oldWidth;
+             d.scrollable.scrollLeft = (ratio * newWidth) - d.pX;
           });
         }
 
@@ -621,6 +645,43 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           if (container.children.length > 0) return; // already rendered
           
           container.addEventListener('wheel', handleMapZoom, { passive: false });
+          
+          let isDragging = false;
+          let startX = 0;
+          let startY = 0;
+          let scrollLeftStarts = [];
+          let scrollTopStart = 0;
+          const layoutContainer = document.getElementById('memoryMapLayout');
+
+          container.addEventListener('mousedown', (e) => {
+             isDragging = true;
+             startX = e.pageX;
+             startY = e.pageY;
+             scrollLeftStarts = Array.from(document.querySelectorAll('.map-scrollable')).map(s => ({
+                el: s,
+                startLeft: s.scrollLeft
+             }));
+             if (layoutContainer) scrollTopStart = layoutContainer.scrollTop;
+             container.style.cursor = 'grabbing';
+          });
+
+          window.addEventListener('mousemove', (e) => {
+             if (!isDragging) return;
+             e.preventDefault();
+             const dx = e.pageX - startX;
+             const dy = e.pageY - startY;
+             scrollLeftStarts.forEach(obj => {
+                obj.el.scrollLeft = obj.startLeft - dx;
+             });
+             if (layoutContainer) layoutContainer.scrollTop = scrollTopStart - dy;
+          });
+
+          window.addEventListener('mouseup', () => {
+             if (isDragging) {
+                isDragging = false;
+                container.style.cursor = 'auto';
+             }
+          });
           
           if (!symbolsData || symbolsData.length === 0) {
             container.innerHTML = '<p><i>Please use the "Load ELF Symbols" button successfully before tracing Hardware Memory allocations!</i></p>';
