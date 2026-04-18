@@ -6,7 +6,8 @@ export function getWebviewContent(data: LogDataPoint[]): string {
   const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
   const ringData = data.map(d => ({ x: d.t / timeFactor, y: d.ring }));
   const intLevelData = data.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
-  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, tlbDetails: d.tlbDetails, ioType: d.ioType, ioDevice: d.ioDevice, ioDetails: d.ioDetails, funcAddr: d.funcAddr, funcArgs: d.funcArgs, funcRet: d.funcRet, funcName: d.funcName }));
+  // Keep only essential primitives required for scatter point colors (exc, tlb, io)
+  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType }));
 
   const iMissData = data.map((d, i, arr) => {
     if (i === 0 || d.iMiss === null || arr[i - 1].iMiss === null) return { x: d.t / timeFactor, y: 0 };
@@ -224,6 +225,38 @@ export function getWebviewContent(data: LogDataPoint[]): string {
           }
         };
 
+        document.getElementById('logChart').ondblclick = (e) => {
+          if (!window.myChart) return;
+          const xValue = window.myChart.scales.x.getValueForPixel(e.native ? e.native.offsetX : e.offsetX);
+          if (xValue !== undefined) {
+            const clickT = xValue * 38420000.0;
+            const allDetails = document.querySelectorAll('#tree-sidebar details');
+            let bestDetails = null;
+            let minDuration = Infinity;
+
+            for (let i = 0; i < allDetails.length; i++) {
+              const el = allDetails[i];
+              const startT = parseInt(el.dataset.startT, 10);
+              const endT = el.dataset.endT ? parseInt(el.dataset.endT, 10) : Infinity;
+
+              if (clickT >= startT && clickT <= endT) {
+                const duration = endT - startT;
+                if (duration <= minDuration) {
+                  minDuration = duration;
+                  bestDetails = el;
+                }
+              }
+            }
+
+            if (bestDetails) {
+              const summary = bestDetails.querySelector('summary');
+              if (summary && summary.dataset.file) {
+                vscode.postMessage({ command: 'openSource', file: summary.dataset.file, line: parseInt(summary.dataset.line, 10) });
+              }
+            }
+          }
+        };
+
         window.myChart = new Chart(ctx, {
           type: 'line',
           plugins: [verticalLinePlugin],
@@ -241,6 +274,50 @@ export function getWebviewContent(data: LogDataPoint[]): string {
               mode: 'index',
               intersect: false,
             },
+            onClick: (e, elements, chart) => {
+              // Convert the raw Canvas Pixel Click into an absolute execution timeline (in seconds)
+              const xValue = chart.scales.x.getValueForPixel(e.native ? e.native.offsetX : e.x);
+              if (xValue !== undefined) {
+                // Restore integer Clock Tick formats (T) natively evaluated by QEMU logs
+                const clickT = xValue * 38420000.0;
+                
+                const allDetails = document.querySelectorAll('#tree-sidebar details');
+                let bestDetails = null;
+                let minDuration = Infinity;
+
+                for (let i = 0; i < allDetails.length; i++) {
+                  const el = allDetails[i];
+                  const startT = parseInt(el.dataset.startT, 10);
+                  const endT = el.dataset.endT ? parseInt(el.dataset.endT, 10) : Infinity;
+
+                  // Safely envelope functions wrapping the exact Millisecond Click Coordinate
+                  if (clickT >= startT && clickT <= endT) {
+                    const duration = endT - startT;
+                    if (duration <= minDuration) {
+                      minDuration = duration;
+                      bestDetails = el;
+                    }
+                  }
+                }
+
+                if (bestDetails) {
+                  const summary = bestDetails.querySelector('summary');
+                  if (summary) {
+                    const prev = document.querySelector('summary.selected');
+                    if (prev) prev.classList.remove('selected');
+                    summary.classList.add('selected');
+
+                    let parent = bestDetails.parentElement;
+                    while(parent && parent.id !== 'tree-sidebar') {
+                      if (parent.tagName === 'DETAILS') parent.open = true;
+                      parent = parent.parentElement;
+                    }
+
+                    summary.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                  }
+                }
+              }
+            },
             plugins: {
               tooltip: {
                 animation: false,
@@ -256,22 +333,23 @@ export function getWebviewContent(data: LogDataPoint[]): string {
                   },
                   label: function(context) {
                     if (context.dataset.label === 'Call Depth') {
+                      const d = logData[context.dataIndex];
                       let base = '';
-                      if (showExceptions && context.raw.exc !== null && context.raw.exc !== undefined) {
-                        base = 'Exception: EXCCAUSE ' + context.raw.exc;
-                      } else if (showTlb && context.raw.tlbType) {
-                        base = 'TLB ' + context.raw.tlbType + ' ' + (context.raw.tlbDetails || '');
-                      } else if (showIo && context.raw.ioType) {
-                        base = 'ACE IO: ' + (context.raw.ioDevice || '') + ' ' + context.raw.ioType.toUpperCase() + ' // ' + (context.raw.ioDetails || '');
+                      if (showExceptions && d.excCause !== null && d.excCause !== undefined) {
+                        base = 'Exception: EXCCAUSE ' + d.excCause;
+                      } else if (showTlb && d.tlbType) {
+                        base = 'TLB ' + d.tlbType + ' ' + (d.tlbDetails || '');
+                      } else if (showIo && d.ioType) {
+                        base = 'ACE IO: ' + (d.ioDevice || '') + ' ' + d.ioType.toUpperCase() + ' // ' + (d.ioDetails || '');
                       }
 
                       let funcDesc = '';
-                      if (context.raw.funcAddr !== undefined) {
-                        const nameLabel = context.raw.funcName ? context.raw.funcName : '0x' + context.raw.funcAddr.toString(16);
-                        if (context.raw.funcArgs) {
-                          funcDesc = 'Entry: ' + nameLabel + '(a2=' + context.raw.funcArgs[0] + ', a3=' + context.raw.funcArgs[1] + ', a4=' + context.raw.funcArgs[2] + ', a5=' + context.raw.funcArgs[3] + ', a6=' + context.raw.funcArgs[4] + ', a7=' + context.raw.funcArgs[5] + ')';
-                        } else if (context.raw.funcRet) {
-                          funcDesc = 'Return: ' + nameLabel + ' -> a2=' + context.raw.funcRet;
+                      if (d.funcAddr !== undefined) {
+                        const nameLabel = d.funcName ? d.funcName : '0x' + d.funcAddr.toString(16);
+                        if (d.funcArgs) {
+                          funcDesc = 'Entry: ' + nameLabel + '(a2=' + d.funcArgs[0] + ', a3=' + d.funcArgs[1] + ', a4=' + d.funcArgs[2] + ', a5=' + d.funcArgs[3] + ', a6=' + d.funcArgs[4] + ', a7=' + d.funcArgs[5] + ')';
+                        } else if (d.funcRet) {
+                          funcDesc = 'Return: ' + nameLabel + ' -> a2=' + d.funcRet;
                         }
                       }
 
@@ -381,6 +459,18 @@ export function getWebviewContent(data: LogDataPoint[]): string {
                 const summary = document.createElement('summary');
                 
                 summary.textContent = nameLabel + ' (a2...a7: ' + p.funcArgs.join(', ') + ')';
+                
+                if (p.file) {
+                  summary.dataset.file = p.file;
+                  if (p.line !== undefined) summary.dataset.line = p.line.toString();
+                }
+
+                summary.ondblclick = (e) => {
+                  if (summary.dataset.file) {
+                    vscode.postMessage({ command: 'openSource', file: summary.dataset.file, line: parseInt(summary.dataset.line, 10) });
+                  }
+                };
+
                 summary.onclick = (e) => {
                   const prev = document.querySelector('summary.selected');
                   if (prev) prev.classList.remove('selected');

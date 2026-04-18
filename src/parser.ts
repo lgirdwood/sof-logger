@@ -20,6 +20,8 @@ export interface LogDataPoint {
   funcArgs?: string[];
   funcRet?: string;
   funcName?: string;
+  file?: string;
+  line?: number;
 }
 export interface ParseResult {
   dataPoints: LogDataPoint[];

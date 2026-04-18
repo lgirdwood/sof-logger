@@ -13,60 +13,89 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    async function resolveElfSymbols(elfPath: string, logData: any[]) {
-      return new Promise<void>((resolve) => {
-        const cp = require('child_process');
-        cp.exec(`nm -nS ${elfPath}`, { maxBuffer: 1024 * 1024 * 50 }, (error: any, stdout: string) => {
-          if (error) {
-            vscode.window.showErrorMessage('Error reading elf: ' + error.message);
-            resolve();
-            return;
-          }
-          const symbols: {addr: number, size: number, name: string}[] = [];
-          const lines = stdout.split('\n');
-          for (const line of lines) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length >= 4 && parts[2].toLowerCase() === 't') {
-              symbols.push({
-                addr: parseInt(parts[0], 16),
-                size: parseInt(parts[1], 16),
-                name: parts[3]
-              });
-            } else if (parts.length === 3 && parts[1].toLowerCase() === 't') {
-              symbols.push({
-                addr: parseInt(parts[0], 16),
-                size: 0,
-                name: parts[2]
-              });
+    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel) {
+      return vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Loading ELF Symbols (-l formatting)...",
+        cancellable: false
+      }, async (progress) => {
+        return new Promise<void>((resolve) => {
+          const cp = require('child_process');
+          cp.exec(`nm -nS -l ${elfPath}`, { maxBuffer: 1024 * 1024 * 50 }, (error: any, stdout: string) => {
+            if (error) {
+              vscode.window.showErrorMessage('Error reading elf: ' + error.message);
+              resolve();
+              return;
             }
-          }
+            const symbols: {addr: number, size: number, name: string, file?: string, line?: number}[] = [];
+            const lines = stdout.split('\n');
+            for (const rawLine of lines) {
+              const rawParts = rawLine.trim().split(/\t/);
+              const lineData = rawParts[0];
+              const fileData = rawParts.length > 1 ? rawParts[1] : undefined;
+              const parts = lineData.trim().split(/\s+/);
 
-          for (const d of logData) {
-            if (d.funcAddr !== undefined) {
-              const addr = d.funcAddr;
-              let low = 0, high = symbols.length - 1;
-              let closestIndex = -1;
-              while (low <= high) {
-                const mid = Math.floor((low + high) / 2);
-                if (symbols[mid].addr <= addr) {
-                  closestIndex = mid;
-                  low = mid + 1;
-                } else {
-                  high = mid - 1;
-                }
+              let file, lineNum;
+              if (fileData) {
+                 const idx = fileData.lastIndexOf(':');
+                 if (idx !== -1) {
+                    file = fileData.substring(0, idx);
+                    lineNum = parseInt(fileData.substring(idx + 1), 10);
+                 } else {
+                    file = fileData;
+                 }
               }
-              if (closestIndex !== -1) {
-                const sym = symbols[closestIndex];
-                if (sym.size > 0 && addr >= sym.addr + sym.size) {
-                  // outside strictly bound size
-                } else {
-                  d.funcName = sym.name;
+
+              if (parts.length >= 4 && parts[2].toLowerCase() === 't') {
+                symbols.push({
+                  addr: parseInt(parts[0], 16),
+                  size: parseInt(parts[1], 16),
+                  name: parts[3],
+                  file: file,
+                  line: lineNum
+                });
+              } else if (parts.length === 3 && parts[1].toLowerCase() === 't') {
+                symbols.push({
+                  addr: parseInt(parts[0], 16),
+                  size: 0,
+                  name: parts[2],
+                  file: file,
+                  line: lineNum
+                });
+              }
+            }
+
+            for (const d of logData) {
+              if (d.funcAddr !== undefined) {
+                const addr = d.funcAddr;
+                let low = 0, high = symbols.length - 1;
+                let closestIndex = -1;
+                while (low <= high) {
+                  const mid = Math.floor((low + high) / 2);
+                  if (symbols[mid].addr <= addr) {
+                    closestIndex = mid;
+                    low = mid + 1;
+                  } else {
+                    high = mid - 1;
+                  }
+                }
+                if (closestIndex !== -1) {
+                  const sym = symbols[closestIndex];
+                  if (sym.size > 0 && addr >= sym.addr + sym.size) {
+                    // outside strictly bound size
+                  } else {
+                    d.funcName = sym.name;
+                    if (sym.file) d.file = sym.file;
+                    if (sym.line) d.line = sym.line;
+                  }
                 }
               }
             }
-          }
-          vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
-          resolve();
+            
+            panel.webview.html = getWebviewContent(logData);
+            vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
+            resolve();
+          });
         });
       });
     }
@@ -75,21 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
       const parseResult = await parseLogFile(logFilePath);
       const logData = parseResult.dataPoints;
 
-      let targetElfPath = parseResult.elfPath;
-      if (targetElfPath && targetElfPath.endsWith('.ri')) {
-        targetElfPath = targetElfPath.replace(/\.ri$/i, '.elf');
-      }
-
-      if (!targetElfPath) {
-        vscode.window.showWarningMessage('ParseResult failed to find any ELF strings in QEMU log!');
-      } else if (!fs.existsSync(targetElfPath)) {
-        vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
-      } else {
-        await resolveElfSymbols(targetElfPath, logData);
-        vscode.window.showInformationMessage('Successfully fired auto-loader on: ' + targetElfPath);
-      }
-
-      // Create and show the webview
+      // Create and show the webview instantly
       const panel = vscode.window.createWebviewPanel(
         'sofLoggerVisualizer',
         'SOF QEMU Log Visualizer',
@@ -102,6 +117,20 @@ export function activate(context: vscode.ExtensionContext) {
 
       panel.webview.html = getWebviewContent(logData);
 
+      let targetElfPath = parseResult.elfPath;
+      if (targetElfPath && targetElfPath.endsWith('.ri')) {
+        targetElfPath = targetElfPath.replace(/\.ri$/i, '.elf');
+      }
+
+      if (!targetElfPath) {
+        vscode.window.showWarningMessage('ParseResult failed to find any ELF strings in QEMU log!');
+      } else if (!fs.existsSync(targetElfPath)) {
+        vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
+      } else {
+        // Fire and forget without blocking!
+        resolveElfSymbols(targetElfPath, logData, panel);
+      }
+
       panel.webview.onDidReceiveMessage(async message => {
         if (message.command === 'loadElf') {
           const uris = await vscode.window.showOpenDialog({
@@ -109,8 +138,21 @@ export function activate(context: vscode.ExtensionContext) {
             filters: { 'ELF files': ['elf'] }
           });
           if (uris && uris[0]) {
-            await resolveElfSymbols(uris[0].fsPath, logData);
-            panel.webview.html = getWebviewContent(logData);
+            resolveElfSymbols(uris[0].fsPath, logData, panel);
+          }
+        } else if (message.command === 'openSource') {
+          if (message.file && fs.existsSync(message.file)) {
+            vscode.workspace.openTextDocument(vscode.Uri.file(message.file)).then(doc => {
+              vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside).then(editor => {
+                if (message.line) {
+                  const pos = new vscode.Position(message.line - 1, 0);
+                  editor.selection = new vscode.Selection(pos, pos);
+                  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+                }
+              });
+            });
+          } else {
+            vscode.window.showWarningMessage('Source file not found natively: ' + message.file);
           }
         }
       });
