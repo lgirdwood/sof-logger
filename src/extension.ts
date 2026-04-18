@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { parseLogFile } from './parser';
+import { parseLogFile, MemoryRegion } from './parser';
 import { getWebviewContent } from './webview';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -13,7 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel) {
+    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel, memoryRegions: MemoryRegion[] = []) {
       return vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "Loading ELF Symbols (-l formatting)...",
@@ -92,7 +92,7 @@ export function activate(context: vscode.ExtensionContext) {
               }
             }
             
-            panel.webview.html = getWebviewContent(logData, symbols);
+            panel.webview.html = getWebviewContent(logData, symbols, memoryRegions);
             vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
             resolve();
           });
@@ -115,7 +115,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
       );
 
-      panel.webview.html = getWebviewContent(logData);
+      panel.webview.html = getWebviewContent(logData, [], parseResult.memoryRegions);
 
       let targetElfPath = parseResult.elfPath;
       if (targetElfPath && targetElfPath.endsWith('.ri')) {
@@ -128,7 +128,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
       } else {
         // Fire and forget without blocking!
-        resolveElfSymbols(targetElfPath, logData, panel);
+        resolveElfSymbols(targetElfPath, logData, panel, parseResult.memoryRegions);
       }
 
       panel.webview.onDidReceiveMessage(async message => {

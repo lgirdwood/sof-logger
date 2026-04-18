@@ -23,9 +23,16 @@ export interface LogDataPoint {
   file?: string;
   line?: number;
 }
+export interface MemoryRegion {
+  name: string;
+  start: number;
+  end: number;
+}
+
 export interface ParseResult {
   dataPoints: LogDataPoint[];
   elfPath: string | null;
+  memoryRegions?: MemoryRegion[];
 }
 
 export async function parseLogFile(filePath: string): Promise<ParseResult> {
@@ -55,6 +62,12 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
   const ioRegex = /\b([A-Za-z0-9_]+)\s+(read|write):\s+(.*)/i;
   // Firmware Linkage
   const firmwareRegex = /Loading\s+DSP\s+Firmware:\s+(.+)/i;
+  // Memory Region Extraction
+  const regionRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s*:\s*(0x[0-9a-fA-F]+)\s*-\s*(0x[0-9a-fA-F]+)/i;
+  // Coherent Alias Extraction
+  const aliasRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s+non-coherent:\s+\d+\s+core\s+shadows\s+@\s+(0x[0-9a-fA-F]+),\s+coherent\s+alias\s+@\s+(0x[0-9a-fA-F]+)\s+\(size\s+(0x[0-9a-fA-F]+)\)/i;
+
+  let parsedRegions: MemoryRegion[] = [];
 
   let currentElfPath: string | null = null;
   let currentUM: number | null = null;
@@ -134,6 +147,25 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
         currentElfPath = firmwareMatch[1].trim();
       }
 
+      const regionMatch = line.match(regionRegex);
+      if (regionMatch) {
+         parsedRegions.push({
+            name: regionMatch[1].trim(),
+            start: parseInt(regionMatch[2], 16),
+            end: parseInt(regionMatch[3], 16)
+         });
+      }
+
+      const aliasMatch = line.match(aliasRegex);
+      if (aliasMatch) {
+         const baseName = aliasMatch[1].trim();
+         const nStart = parseInt(aliasMatch[2], 16);
+         const cStart = parseInt(aliasMatch[3], 16);
+         const size = parseInt(aliasMatch[4], 16);
+         parsedRegions.push({ name: baseName + '-non-coherent', start: nStart, end: nStart + size - 1 });
+         parsedRegions.push({ name: baseName + '-coherent', start: cStart, end: cStart + size - 1 });
+      }
+
       const psMatch = line.match(psRegex);
     if (psMatch) {
       const psVal = parseInt(psMatch[1], 16);
@@ -183,5 +215,5 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     }
   }
 
-  return { dataPoints, elfPath: currentElfPath };
+  return { dataPoints, elfPath: currentElfPath, memoryRegions: parsedRegions };
 }

@@ -1,6 +1,6 @@
-import { LogDataPoint } from './parser';
+import { LogDataPoint, MemoryRegion } from './parser';
 
-export function getWebviewContent(data: LogDataPoint[], symbols: any[] = []): string {
+export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], regionsMeta: MemoryRegion[] = []): string {
   const timeFactor = 38420000.0;
   
   const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
@@ -85,6 +85,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = []): st
       <script>
         const logData = ${JSON.stringify(data)};
         const symbolsData = ${JSON.stringify(symbols)};
+        const regionsMeta = ${JSON.stringify(regionsMeta)};
         const vscode = acquireVsCodeApi();
 
         let showExceptions = true;
@@ -626,25 +627,56 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = []): st
             return;
           }
 
-          container.innerHTML = '';
-          const regions = { 'IMR': [], 'LPSRAM': [], 'HPSRAM': [] };
+          let regions = {};
+          if (regionsMeta && regionsMeta.length > 0) {
+             regionsMeta.forEach(r => { regions[r.name] = []; });
+          } else {
+             regions = { 'IMR': [], 'LPSRAM': [], 'HPSRAM': [] };
+          }
           
           symbolsData.forEach(sym => {
             if (sym.size > 0) {
-              const prefix = sym.addr >>> 20; 
-              if (prefix === 0xA00) regions['HPSRAM'].push(sym);
-              else if (prefix === 0xA01 || prefix === 0xA10) {
-                // IMR is fixed around A1048000 structurally
-                if (sym.addr >= 0xA1040000 && sym.addr < 0xA1060000) regions['IMR'].push(sym);
-                else regions['LPSRAM'].push(sym);
+              let rName = '';
+              if (regionsMeta && regionsMeta.length > 0) {
+                 const matched = regionsMeta.find(r => sym.addr >= r.start && sym.addr < r.end);
+                 if (matched) rName = matched.name;
+                 else {
+                   const prefix = sym.addr >>> 20;
+                   if (prefix === 0xA00) rName = 'hp-sram (deferred)';
+                   else if (prefix === 0xA01 || prefix === 0xA10) rName = 'lp-sram (overflow)';
+                 }
+              } else {
+                 const prefix = sym.addr >>> 20; 
+                 if (prefix === 0xA00) rName = 'HPSRAM';
+                 else if (prefix === 0xA01 || prefix === 0xA10) {
+                   if (sym.addr >= 0xA1040000 && sym.addr < 0xA1060000) rName = 'IMR';
+                   else rName = 'LPSRAM';
+                 }
+              }
+              if (rName) {
+                 if (!regions[rName]) regions[rName] = [];
+                 regions[rName].push(sym);
               }
             }
           });
 
-          for (const rName in regions) {
-            if (regions[rName].length === 0) continue;
+          const activeRegions = Object.keys(regions)
+            .map(rName => {
+               const sortedSyms = regions[rName].sort((a,b) => a.addr - b.addr);
+               let base = sortedSyms[0] ? sortedSyms[0].addr : 0;
+               if (regionsMeta && regionsMeta.length > 0) {
+                  const rm = regionsMeta.find(r => r.name === rName);
+                  if (rm) base = rm.start;
+               }
+               return { name: rName, base: base, syms: sortedSyms };
+            })
+            .sort((a,b) => a.base - b.base);
+
+          activeRegions.forEach(regionData => {
+            const rName = regionData.name;
+            const sorted = regionData.syms;
             let sumSize = 0;
-            regions[rName].forEach(s => sumSize += s.size);
+            sorted.forEach(s => sumSize += s.size);
 
             const rDiv = document.createElement('div');
             rDiv.className = 'memory-region';
@@ -656,54 +688,70 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = []): st
             blocksDiv.className = 'memory-blocks';
             blocksDiv.style.display = 'block'; // Override flex, we will use individual bank rows natively
             
-            const sorted = regions[rName].sort((a,b) => a.addr - b.addr);
-            
             // Resolve boundary arrays
-            let minAddr = sorted[0].addr;
-            let maxAddr = sorted[sorted.length - 1].addr + sorted[sorted.length - 1].size;
+            let minAddr = sorted[0] ? sorted[0].addr : 0;
+            let maxAddr = sorted.length ? sorted[sorted.length - 1].addr + sorted[sorted.length - 1].size : 0;
 
-            if (rName === 'IMR') {
+            if (regionsMeta && regionsMeta.length > 0) {
+               const rm = regionsMeta.find(r => r.name === rName);
+               if (rm) {
+                  minAddr = rm.start;
+                  maxAddr = rm.end + 1;
+               }
+            }
+
+            const bankSize = 262144; // 256KB Explicit Hardware Bank Array Constraints
+            minAddr = Math.floor(minAddr / bankSize) * bankSize; // Protect against JS 32-bit signed bitwise limits safely
+            const bankCount = Math.ceil((maxAddr - minAddr) / bankSize) || 1;
+            
+            for (let idx = 0; idx < bankCount; idx++) {
+              const bankBase = minAddr + (idx * bankSize);
+              const bankLimit = bankBase + bankSize;
+              
+              const insideBank = sorted.filter(s => s.addr < bankLimit && (s.addr + s.size) > bankBase);
+              
               const bDiv = document.createElement('div');
               bDiv.className = 'memory-bank';
               bDiv.style.position = 'relative';
-              bDiv.style.height = '40px';
+              bDiv.style.height = '35px';
+              bDiv.style.marginBottom = '6px';
               bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
               bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
+              bDiv.title = rName + ' Row ' + idx + ' (0x' + bankBase.toString(16).toUpperCase() + ')';
               
-              const totalSize = maxAddr - minAddr || 1;
-              sorted.forEach(sym => {
-                const sb = createMemBlock(sym, minAddr, totalSize);
+              const startLabel = document.createElement('span');
+              startLabel.textContent = '0x' + bankBase.toString(16).toUpperCase();
+              startLabel.style.position = 'absolute';
+              startLabel.style.left = '2px';
+              startLabel.style.top = '2px';
+              startLabel.style.fontSize = '10px';
+              startLabel.style.color = '#fff';
+              startLabel.style.background = 'rgba(0,0,0,0.6)';
+              startLabel.style.padding = '0 3px';
+              startLabel.style.zIndex = '5';
+              
+              const endLabel = document.createElement('span');
+              endLabel.textContent = '0x' + (bankLimit - 1).toString(16).toUpperCase();
+              endLabel.style.position = 'absolute';
+              endLabel.style.right = '2px';
+              endLabel.style.top = '2px';
+              endLabel.style.fontSize = '10px';
+              endLabel.style.color = '#fff';
+              endLabel.style.background = 'rgba(0,0,0,0.6)';
+              endLabel.style.padding = '0 3px';
+              endLabel.style.zIndex = '5';
+              
+              bDiv.appendChild(startLabel);
+              bDiv.appendChild(endLabel);
+
+              const pagePct = (4096 / bankSize) * 100;
+              bDiv.style.backgroundImage = 'repeating-linear-gradient(to right, transparent, transparent calc(' + pagePct + '% - 1px), var(--vscode-editorGroup-border) ' + pagePct + '%)';
+              
+              insideBank.forEach(sym => {
+                const sb = createMemBlock(sym, bankBase, bankSize);
                 bDiv.appendChild(sb);
               });
               blocksDiv.appendChild(bDiv);
-            } else {
-              const bankSize = 65536; // 64KB Explicit Hardware Bank Array Constraints
-              minAddr = minAddr & ~(bankSize - 1); // Round strictly down to explicit aligned Bank boundaries
-              const bankCount = Math.ceil((maxAddr - minAddr) / bankSize);
-              
-              for (let idx = 0; idx < bankCount; idx++) {
-                const bankBase = minAddr + (idx * bankSize);
-                const bankLimit = bankBase + bankSize;
-                
-                // Locate explicitly intersecting symbols for this explicit hardware boundary
-                const insideBank = sorted.filter(s => s.addr < bankLimit && (s.addr + s.size) > bankBase);
-                if (insideBank.length === 0) continue; // Skip strictly empty hardware planes
-                
-                const bDiv = document.createElement('div');
-                bDiv.className = 'memory-bank';
-                bDiv.style.position = 'relative';
-                bDiv.style.height = '35px';
-                bDiv.style.marginBottom = '6px';
-                bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
-                bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
-                bDiv.title = rName + ' Bank ' + idx + ' (0x' + bankBase.toString(16).toUpperCase() + ')';
-                
-                insideBank.forEach(sym => {
-                  const sb = createMemBlock(sym, bankBase, bankSize);
-                  bDiv.appendChild(sb);
-                });
-                blocksDiv.appendChild(bDiv);
-              }
             }
             
             const mapScroll = document.createElement('div');
@@ -715,7 +763,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = []): st
             
             rDiv.appendChild(mapScroll);
             container.appendChild(rDiv);
-          }
+          });
         }
         
         function createMemBlock(sym, baseAddr, planeSize) {
