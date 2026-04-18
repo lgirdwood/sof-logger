@@ -274,6 +274,7 @@ export function getWebviewContent(data: LogDataPoint[]): string {
               mode: 'index',
               intersect: false,
             },
+
             onClick: (e, elements, chart) => {
               // Convert the raw Canvas Pixel Click into an absolute execution timeline (in seconds)
               const xValue = chart.scales.x.getValueForPixel(e.native ? e.native.offsetX : e.x);
@@ -319,6 +320,10 @@ export function getWebviewContent(data: LogDataPoint[]): string {
               }
             },
             plugins: {
+              decimation: {
+                enabled: true,
+                algorithm: 'min-max'
+              },
               tooltip: {
                 animation: false,
                 callbacks: {
@@ -368,11 +373,17 @@ export function getWebviewContent(data: LogDataPoint[]): string {
               zoom: {
                 pan: {
                   enabled: true,
-                  mode: 'x'
+                  mode: 'x',
+                  modifierKey: 'ctrl' // Only Pan (re-render) when holding Ctrl
                 },
                 zoom: {
                   wheel: { enabled: true },
-                  drag: { enabled: true },
+                  drag: { 
+                    enabled: true,
+                    backgroundColor: 'rgba(54, 162, 235, 0.3)', // Draw Selection Bounding Box without repainting
+                    borderColor: 'rgb(54, 162, 235)',
+                    borderWidth: 1
+                  },
                   pinch: { enabled: true },
                   mode: 'x'
                 }
