@@ -57,8 +57,8 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
   const missRegex = /Imiss=(\d+)\s+Dmiss=(\d+)/i;
   // FUNC ENTRY: pc=0xa10486f0 sp=0xa1042000 ps=0x0005002f a2=0x00000000 a3=0x00000000 a4=0x610485a0 a5=0xa1041fe0 a6=0x00000000 a7=0xa1040000
   const funcEntryRegex = /FUNC ENTRY:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+a2=(0x[0-9a-fA-F]+)\s+a3=(0x[0-9a-fA-F]+)\s+a4=(0x[0-9a-fA-F]+)\s+a5=(0x[0-9a-fA-F]+)\s+a6=(0x[0-9a-fA-F]+)\s+a7=(0x[0-9a-fA-F]+)/;
-  // FUNC RET: pc=0xa10481c6 sp=0xa1041fe0 ps=0x0006002f a2=0x00000000
-  const funcRetRegex = /FUNC RET:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+a2=(0x[0-9a-fA-F]+)/;
+  // FUNC RET: pc=0xa10481c6 sp=0xa1041fe0 ps=0x0006002f ret=0x00480000
+  const funcRetRegex = /FUNC RET:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+(?:ret|a2)=(0x[0-9a-fA-F]+)/;
   // Exceptions
   const excRegex = /EXCCAUSE\s*=\s*(\d+)/;
   // TLB Events: "TLB D lookup hit: addr=0x..."

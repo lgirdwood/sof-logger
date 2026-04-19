@@ -57,6 +57,14 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         .memory-bank { border: 1px solid var(--vscode-editorGroup-border); margin-bottom: 8px; position: relative; background: var(--vscode-editor-background); height: 35px; box-sizing: border-box; overflow: hidden; background-image: repeating-linear-gradient(to right, transparent, transparent calc(6.25% - 1px), var(--vscode-editorGroup-border) 6.25%); }
         .mem-block { position: absolute; height: 100%; background: var(--vscode-editor-selectionBackground); border-right: 1px solid var(--vscode-editor-selectionForeground); overflow: hidden; font-size: 10px; display: flex; align-items: center; justify-content: center; color: var(--vscode-editor-foreground); cursor: pointer; box-sizing: border-box; }
         .mem-block:hover { background: var(--vscode-list-hoverBackground); }
+        @keyframes mapFlash {
+           0% { background: #ffff00 !important; color: #000 !important; box-shadow: 0 0 15px #ffff00, inset 0 0 10px #000; z-index: 100; }
+           25% { background: #ff0000 !important; color: #fff !important; box-shadow: 0 0 25px #ff0000, inset 0 0 15px #fff; z-index: 100; transform: scaleY(1.3); }
+           50% { background: #ffff00 !important; color: #000 !important; box-shadow: 0 0 15px #ffff00, inset 0 0 10px #000; z-index: 100; transform: scaleY(1.3); }
+           75% { background: #ff0000 !important; color: #fff !important; box-shadow: 0 0 25px #ff0000, inset 0 0 15px #fff; z-index: 100; transform: scaleY(1.3); }
+           100% { z-index: 100; transform: scaleY(1); }
+        }
+        .flash-target { animation: mapFlash 2s cubic-bezier(0.25, 0.1, 0.25, 1) !important; z-index: 100 !important; }
         .memory-map-layout::-webkit-scrollbar { display: none; }
         .map-scrollable::-webkit-scrollbar { display: none; }
         .memory-map-layout { -ms-overflow-style: none; scrollbar-width: none; }
@@ -437,27 +445,33 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               yCDelta: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
                 title: { display: true, text: 'C-Delta' },
-                grid: { drawOnChartArea: true }
+                grid: { drawOnChartArea: true }, grace: '20%'
               },
               yCallDepth: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1.5,
-                title: { display: true, text: 'Call Depth' }, suggestedMin: 0,
+                title: { display: true, text: 'Call Depth' }, suggestedMin: 0, grace: '20%',
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
               yDMiss: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
                 title: { display: true, text: 'D-Miss' },
-                grid: { drawOnChartArea: true }
+                grid: { drawOnChartArea: true }, grace: '20%'
               },
               yIMiss: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
                 title: { display: true, text: 'I-Miss' },
-                grid: { drawOnChartArea: true }
+                grid: { drawOnChartArea: true }, grace: '20%'
               },
               yRing: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
                 title: { display: true, text: 'RING' }, min: 0, max: 4,
+                grid: { drawOnChartArea: true },
+                ticks: { stepSize: 1 }
+              },
+              yIntLevel: {
+                type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1.5,
+                title: { display: true, text: 'INTLEVEL' }, suggestedMin: 0, grace: '20%',
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
@@ -640,7 +654,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           if (mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
           if (mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
           
-          const newZoom = Math.max(1.0, Math.min(300.0, mapZoom + delta));
+          const newZoom = Math.max(0.1, Math.min(300.0, mapZoom + delta));
           if (newZoom === mapZoom) return;
           
           const allData = Array.from(document.querySelectorAll('.map-scrollable')).map(scrollable => {
@@ -658,6 +672,11 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           inners.forEach(inner => {
              // @ts-ignore
              inner.style.width = (mapZoom * 100) + '%';
+          });
+          
+          document.querySelectorAll('.addr-marker').forEach(marker => {
+             // @ts-ignore
+             marker.style.display = (mapZoom >= parseFloat(marker.dataset.z)) ? 'block' : 'none';
           });
           
           allData.forEach(d => {
@@ -904,13 +923,9 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                         });
                         setTimeout(() => {
                            blockTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-                           const oldBg = blockTarget.style.backgroundColor;
-                           blockTarget.style.backgroundColor = '#ffff00';
-                           blockTarget.style.color = '#000';
-                           setTimeout(() => { 
-                               blockTarget.style.backgroundColor = oldBg; 
-                               blockTarget.style.color = '#fff';
-                           }, 2000);
+                           blockTarget.classList.remove('flash-target');
+                           void blockTarget.offsetWidth; // Trigger DOM reflow seamlessly
+                           blockTarget.classList.add('flash-target');
                         }, 50);
                     }
                  };
@@ -1034,11 +1049,36 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               endLabel.style.padding = '0 3px';
               endLabel.style.zIndex = '5';
               
-              bDiv.appendChild(startLabel);
               bDiv.appendChild(endLabel);
+              
+              for (let offset = 4096; offset < bankSize; offset += 4096) {
+                   const label = document.createElement('span');
+                   label.textContent = '0x' + (bankBase + offset).toString(16).toUpperCase();
+                   label.style.position = 'absolute';
+                   label.style.left = ((offset / bankSize) * 100) + '%';
+                   label.style.top = '2px';
+                   label.style.fontSize = '9px';
+                   label.style.color = 'rgba(255,255,255,0.7)';
+                   label.style.background = 'rgba(0,0,0,0.5)';
+                   label.style.padding = '0 2px';
+                   label.style.zIndex = '4';
+                   label.style.transform = 'translate(-50%, 0)';
+                   label.style.pointerEvents = 'none';
+                   label.className = 'addr-marker';
+                   
+                   if (offset % 65536 === 0) label.dataset.z = '2.0';
+                   else if (offset % 32768 === 0) label.dataset.z = '5.0';
+                   else if (offset % 16384 === 0) label.dataset.z = '12.0';
+                   else if (offset % 8192 === 0) label.dataset.z = '25.0';
+                   else label.dataset.z = '50.0';
+                   
+                   label.style.display = (mapZoom >= parseFloat(label.dataset.z)) ? 'block' : 'none';
+                   bDiv.appendChild(label);
+              }
 
               const pagePct = (4096 / bankSize) * 100;
-              bDiv.style.backgroundImage = 'repeating-linear-gradient(to right, transparent, transparent calc(' + pagePct + '% - 1px), var(--vscode-editorGroup-border) ' + pagePct + '%)';
+              bDiv.style.backgroundImage = 'linear-gradient(to right, transparent calc(100% - 1px), var(--vscode-editorGroup-border) 100%)';
+              bDiv.style.backgroundSize = pagePct + '% 100%';
               
               insideBank.forEach(sym => {
                 const sb = createMemBlock(sym, bankBase, bankSize);
