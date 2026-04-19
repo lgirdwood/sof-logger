@@ -3,26 +3,30 @@ import * as readline from 'readline';
 
 export interface LogDataPoint {
   t: number;
-  um: number | null;
-  ring: number | null;
-  intLevel: number | null;
-  iMiss: number | null;
-  dMiss: number | null;
-  callDepth: number | null;
-  excCause: number | null;
-  c: number | null;
-  tlbType: 'I' | 'D' | null;
-  tlbDetails: string | null;
-  ioType: 'read' | 'write' | null;
-  ioDevice: string | null;
-  ioDetails: string | null;
+  c?: number;
+  core?: number;
+  um?: number;
+  ring?: number;
+  intLevel?: number;
+  excCause?: number;
+  tlbType?: 'I' | 'D';
+  tlbDetails?: string;
+  ioType?: 'read' | 'write';
+  ioDevice?: string;
+  ioDetails?: string;
+  iMiss?: number | null;
+  dMiss?: number | null;
+  callDepth?: number;
   funcAddr?: number;
+  funcSp?: string;
+  funcName?: string;
   funcArgs?: string[];
   funcRet?: string;
-  funcName?: string;
   file?: string;
   line?: number;
+  caller?: string;
 }
+
 export interface MemoryRegion {
   name: string;
   start: number;
@@ -123,6 +127,7 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     let currentFuncAddr: number | null = null;
     let currentFuncArgs: string[] | null = null;
     let currentFuncRet: string | null = null;
+    let currentFuncSp: string | null = null;
 
     // Parse FUNC ENTRY / RET
     const entryMatch = line.match(funcEntryRegex);
@@ -130,6 +135,7 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
       currentCallDepth++;
       changed = true;
       currentFuncAddr = parseInt(entryMatch[1], 16);
+      currentFuncSp = entryMatch[2];
       currentFuncArgs = [entryMatch[4], entryMatch[5], entryMatch[6], entryMatch[7], entryMatch[8], entryMatch[9]];
     } else {
       const retMatch = line.match(funcRetRegex);
@@ -137,6 +143,7 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
         currentCallDepth = Math.max(0, currentCallDepth - 1);
         changed = true;
         currentFuncAddr = parseInt(retMatch[1], 16);
+        currentFuncSp = retMatch[2];
         currentFuncRet = retMatch[4];
       }
     }
@@ -195,23 +202,36 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     if (changed) {
       dataPoints.push({
         t: currentT,
-        um: currentUM,
-        ring: currentRing,
-        intLevel: currentIntLevel,
-        iMiss: currentIMiss,
-        dMiss: currentDMiss,
+        um: currentUM !== null ? currentUM : undefined,
+        ring: currentRing !== null ? currentRing : undefined,
+        intLevel: currentIntLevel !== null ? currentIntLevel : undefined,
+        iMiss: currentIMiss !== null ? currentIMiss : undefined,
+        dMiss: currentDMiss !== null ? currentDMiss : undefined,
         callDepth: currentCallDepth,
-        excCause: currentExc,
-        c: currentC,
-        tlbType: currentTlbType,
-        tlbDetails: currentTlbDetails,
-        ioType: currentIoType,
-        ioDevice: currentIoDevice,
-        ioDetails: currentIoDetails,
-        funcAddr: currentFuncAddr !== null ? currentFuncAddr : undefined,
-        funcArgs: currentFuncArgs !== null ? currentFuncArgs : undefined,
-        funcRet: currentFuncRet !== null ? currentFuncRet : undefined
+        excCause: currentExc !== null ? currentExc : undefined,
+        c: currentC !== null ? currentC : undefined,
+        tlbType: currentTlbType !== null ? currentTlbType : undefined,
+        tlbDetails: currentTlbDetails !== null ? currentTlbDetails : undefined,
+        ioType: currentIoType !== null ? currentIoType : undefined,
+        ioDevice: currentIoDevice !== null ? currentIoDevice : undefined,
+        ioDetails: currentIoDetails !== null ? currentIoDetails : undefined,
+        funcAddr: changed && currentFuncAddr !== null ? currentFuncAddr : undefined,
+        funcSp: changed && currentFuncSp !== null ? currentFuncSp : undefined,
+        funcArgs: changed && currentFuncArgs !== null ? currentFuncArgs : undefined,
+        funcRet: changed && currentFuncRet !== null ? currentFuncRet : undefined,
       });
+
+      // Reset transients
+      currentExc = null;
+      currentTlbType = null;
+      currentTlbDetails = null;
+      currentIoType = null;
+      currentIoDevice = null;
+      currentIoDetails = null;
+      currentFuncAddr = null;
+      currentFuncSp = null;
+      currentFuncArgs = null;
+      currentFuncRet = null;
     }
   }
 

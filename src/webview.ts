@@ -10,18 +10,18 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
   const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType }));
 
   const iMissData = data.map((d, i, arr) => {
-    if (i === 0 || d.iMiss === null || arr[i - 1].iMiss === null) return { x: d.t / timeFactor, y: 0 };
-    return { x: d.t / timeFactor, y: Math.max(0, d.iMiss - arr[i - 1].iMiss!) };
+    if (i === 0 || d.iMiss == null || arr[i - 1].iMiss == null) return { x: d.t / timeFactor, y: 0 };
+    return { x: d.t / timeFactor, y: Math.max(0, (d.iMiss || 0) - (arr[i - 1].iMiss || 0)) };
   });
 
   const dMissData = data.map((d, i, arr) => {
-    if (i === 0 || d.dMiss === null || arr[i - 1].dMiss === null) return { x: d.t / timeFactor, y: 0 };
-    return { x: d.t / timeFactor, y: Math.max(0, d.dMiss - arr[i - 1].dMiss!) };
+    if (i === 0 || d.dMiss == null || arr[i - 1].dMiss == null) return { x: d.t / timeFactor, y: 0 };
+    return { x: d.t / timeFactor, y: Math.max(0, (d.dMiss || 0) - (arr[i - 1].dMiss || 0)) };
   });
 
   const cDeltaData = data.map((d, i, arr) => {
-    if (i === 0 || d.c === null || arr[i - 1].c === null) return { x: d.t / timeFactor, y: 0 };
-    return { x: d.t / timeFactor, y: Math.max(0, d.c - arr[i - 1].c!) };
+    if (i === 0 || d.c == null || arr[i - 1].c == null) return { x: d.t / timeFactor, y: 0 };
+    return { x: d.t / timeFactor, y: Math.max(0, (d.c || 0) - (arr[i - 1].c || 0)) };
   });
 
   return `
@@ -89,8 +89,17 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         </div>
       </div>
       <div class="memory-map-layout" id="memoryMapLayout">
-        <h2>Visual Memory Map</h2>
-        <div id="memory-map-container"></div>
+        <div style="display: flex; gap: 20px; align-items: baseline; margin-bottom: 10px;">
+          <h2>Visual Memory Map</h2>
+          <input type="text" id="allocSearch" placeholder="Search allocations..." onkeydown="if(event.key === 'Enter') searchAllocs(this.value)" style="width: 300px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px;" />
+        </div>
+        <div style="display: flex; height: calc(100% - 40px); gap: 10px;">
+          <div class="sidebar-wrapper" style="width: 25%; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); padding-right: 10px;">
+             <h3 style="margin-top: 0; font-size: 14px;">Dynamic Allocations</h3>
+             <div class="sidebar" id="alloc-sidebar" style="flex-grow: 1; overflow-y: auto;"></div>
+          </div>
+          <div id="memory-map-container" style="flex-grow: 1; overflow-y: auto;"></div>
+        </div>
       </div>
 
       <script>
@@ -446,12 +455,6 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                 title: { display: true, text: 'I-Miss' },
                 grid: { drawOnChartArea: true }
               },
-              yIntLevel: {
-                type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
-                title: { display: true, text: 'INT' }, min: 0, max: 16,
-                grid: { drawOnChartArea: true },
-                ticks: { stepSize: 1 }
-              },
               yRing: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
                 title: { display: true, text: 'RING' }, min: 0, max: 4,
@@ -590,6 +593,18 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           }
         }
 
+        function searchAllocs(query) {
+           query = query.toLowerCase();
+           const sidebar = document.getElementById('alloc-sidebar');
+           if (!sidebar) return;
+           const children = sidebar.children;
+           for (let i = 0; i < children.length; i++) {
+              const text = children[i].textContent.toLowerCase();
+              if (text.includes(query)) children[i].style.display = 'block';
+              else children[i].style.display = 'none';
+           }
+        }
+
         function resetZoom() {
           if (window.myChart) {
             window.myChart.options.scales.x.min = undefined;
@@ -706,47 +721,100 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           function isAllocCall(name) {
               if (!name) return false;
               const n = name.toLowerCase();
-              return n.includes('alloc') && !n.includes('free');
+              if (n.includes('free')) return false;
+              // Explicitly capture all SOF memory APIs tracked natively in alloc.c
+              return n.includes('alloc') || n.includes('rzalloc') || n.includes('vmh_alloc') || n.includes('heap_alloc');
           }
 
           function guessAllocSize(name, args) {
              if (!args) return 0;
              const n = name.toLowerCase();
              const a = args.map(x => parseInt(x, 16) || 0);
-             if (n.includes('rmalloc_align')) return a[3] || a[1] || a[0];
-             if (n.includes('rmalloc')) return a[3] || a[1] || a[0];
-             if (n.includes('rballoc_align')) return a[2] || a[1] || a[0];
-             if (n.includes('rballoc')) return a[2] || a[1] || a[0];
-             if (n.includes('sys_heap_aligned_alloc')) return a[2] || a[1];
-             if (n.includes('sys_heap_alloc') || n.includes('z_malloc_heap')) return a[1] || a[0];
-             if (n.includes('rbrealloc') || n.includes('realloc')) return a[3] || a[2] || a[1];
-             return a[0];
+
+             // Evaluate exact argument indices based cleanly on alloc.c prototypes
+             if (n.includes('virtual_heap_alloc')) return a[2]; // (heap, flags, bytes, align)
+             if (n.includes('sof_heap_alloc')) return a[2]; // (heap, flags, bytes, align)
+             if (n.includes('l3_heap_alloc')) return a[2]; // (heap, align, bytes)
+             if (n.includes('heap_alloc_aligned')) return a[2]; // (heap, align, bytes)
+             
+             if (n.includes('rmalloc_align')) return a[1]; // (flags, bytes, alignment)
+             if (n.includes('rmalloc')) return a[1]; // (flags, bytes)
+             if (n.includes('rballoc_align')) return a[1]; // (flags, bytes, align)
+             if (n.includes('rballoc')) return a[1]; // (flags, caps, bytes) occasionally
+             
+             if (n.includes('rzalloc')) return a[1]; // (flags, bytes)
+             if (n.includes('rbrealloc') || n.includes('realloc')) return a[2]; // (ptr, flags, bytes, ...)
+             
+             if (n.includes('sys_heap_aligned_alloc')) return a[2]; // (heap, align, bytes)
+             if (n.includes('sys_heap_alloc') || n.includes('z_malloc_heap')) return a[1]; // (heap, bytes)
+             
+             // Fallback iteration
+             return a[2] || a[1] || a[0];
           }
 
+           function guessAllocFlags(name, args) {
+              if (!args) return '0x0';
+              const n = name.toLowerCase();
+              if (n.includes('virtual_heap_alloc')) return args[1];
+              if (n.includes('sof_heap_alloc')) return args[1];
+              if (n.includes('rbrealloc') || n.includes('realloc')) return args[1];
+              if (n.includes('sys_heap_') || n.includes('z_malloc_')) return 'N/A';
+              if (n.includes('l3_heap_alloc') || n.includes('heap_alloc_aligned')) return 'N/A';
+              return args[0]; // For rmalloc, rzalloc, rballoc
+           }
           logData.forEach(d => {
-             const core = d.c || 0;
+             const core = d.core !== undefined ? d.core : 0;
              if (!coreStacks[core]) coreStacks[core] = [];
              
              if (d.funcArgs) {
                 // Entry Trace
-                if (isAllocCall(d.funcName)) {
-                    coreStacks[core].push({ name: d.funcName, size: guessAllocSize(d.funcName, d.funcArgs) });
-                } else {
-                    coreStacks[core].push(null);
-                }
-             } else if (d.funcRet) {
+                const deepStack = coreStacks[core].slice(-4).map(s => s.name);
+                coreStacks[core].push({ 
+                    name: d.funcName, 
+                    args: d.funcArgs, 
+                    isEntry: isAllocCall(d.funcName),
+                    stackChain: deepStack,
+                    sp: d.funcSp
+                });
+             } else if (d.funcRet && d.funcSp) {
                 // Exit Trace
-                const popped = coreStacks[core].pop();
-                if (popped && isAllocCall(d.funcName)) {
-                    const addr = parseInt(d.funcRet, 16);
-                    if (addr !== 0) {
-                        heapAllocs.push({
-                           addr: addr,
-                           size: Math.max(popped.size, 4), // Explicit lower bound mapping visualization dynamically
-                           name: 'Dyn [' + d.funcName + '] (' + popped.size + ' B)',
-                           sect: 'heap_dyn'
-                        });
-                    }
+                // Function RET PCs don't natively match symbols (they are retw instructions).
+                // Safely grab the corresponding stack frame structurally resolving SP alignments instead!
+                if (coreStacks[core].length > 0) {
+                   let matchIdx = -1;
+                   for (let i = coreStacks[core].length - 1; i >= 0; i--) {
+                       if (coreStacks[core][i].sp === d.funcSp) {
+                           matchIdx = i;
+                           break;
+                       }
+                   }
+                   
+                   if (matchIdx !== -1) {
+                       const entryNode = coreStacks[core][matchIdx];
+                       // Structurally pop this frame and everything above it implicitly aligning dropping corrupted bounds
+                       coreStacks[core] = coreStacks[core].slice(0, matchIdx);
+                       
+                       const name = entryNode.name;
+                       // Track dynamic allocations exactly closing execution boundaries structurally resolving parameters!
+                       if (entryNode.isEntry && isAllocCall(name)) {
+                           const size = guessAllocSize(name, entryNode.args);
+                           const flags = guessAllocFlags(name, entryNode.args);
+                            const ptr = parseInt(d.funcRet, 16);
+                           if (size > 0 && ptr > 0) {
+                              heapAllocs.push({
+                                  name: name,
+                                  stackChain: entryNode.stackChain,
+                                  addr: ptr,
+                                  size: size,
+                                  flags: flags,
+                                  args: entryNode.args,
+                                  sect: 'heap_dyn',
+                                  file: symbolsData.find(s => s.name === name)?.file || '',
+                                  line: symbolsData.find(s => s.name === name)?.line || 0
+                              });
+                           }
+                       }
+                   }
                 }
              }
           });
@@ -755,6 +823,85 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           heapAllocs.forEach(alloc => {
              symbolsData.push(alloc);
           });
+          
+          // Populate allocation sidebar natively mimicking structural elements securely!
+          const allocSidebar = document.getElementById('alloc-sidebar');
+          if (allocSidebar) {
+             allocSidebar.innerHTML = '';
+             heapAllocs.forEach(alloc => {
+                 const rootNode = document.createElement('div');
+                 rootNode.className = 'alloc-item';
+                 rootNode.style.padding = '4px 6px';
+                 rootNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
+                 
+                 let currentContainer = rootNode;
+                 const chain = alloc.stackChain || [];
+                 
+                 chain.forEach((funcName, idx) => {
+                    const details = document.createElement('details');
+                    details.open = (idx === 0); 
+                    const summary = document.createElement('summary');
+                    summary.style.cursor = 'pointer';
+                    summary.style.fontSize = '12px';
+                    summary.style.padding = '2px 0';
+                    summary.textContent = funcName;
+                    
+                    details.appendChild(summary);
+                    
+                    const innerContainer = document.createElement('div');
+                    innerContainer.style.paddingLeft = '15px';
+                    innerContainer.style.borderLeft = '1px dashed var(--vscode-editorGroup-border)';
+                    innerContainer.style.marginLeft = '5px';
+                    
+                    details.appendChild(innerContainer);
+                    currentContainer.appendChild(details);
+                    
+                    currentContainer = innerContainer;
+                 });
+                 
+                 const allocDetails = document.createElement('details');
+                 allocDetails.open = true;
+                 const allocSummary = document.createElement('summary');
+                 allocSummary.style.cursor = 'pointer';
+                 allocSummary.style.fontSize = '12px';
+                 allocSummary.style.color = '#e53935'; 
+                 allocSummary.style.fontWeight = 'bold';
+                 allocSummary.textContent = alloc.name;
+                 
+                 allocDetails.appendChild(allocSummary);
+                 
+                 const resContainer = document.createElement('div');
+                 resContainer.style.paddingLeft = '15px';
+                 resContainer.style.borderLeft = '1px dashed var(--vscode-editorGroup-border)';
+                 resContainer.style.marginLeft = '5px';
+                 resContainer.style.fontSize = '12px';
+                 resContainer.style.color = '#e2863b';
+                 resContainer.style.lineHeight = '1.4';
+                 
+                 let htmlText = '<b>Size:</b> ' + alloc.size + ' B<br/>';
+                 if (alloc.flags !== 'N/A') htmlText += '<b>Flags:</b> ' + alloc.flags + '<br/>';
+                 htmlText += '<b>Ret Addr:</b> 0x' + alloc.addr.toString(16).toUpperCase() + '<br/>';
+                 htmlText += '<span style="font-size:10px; color:var(--vscode-descriptionForeground)">(' + alloc.args.join(', ') + ')</span>';
+                 
+                 resContainer.innerHTML = htmlText;
+                 
+                 allocDetails.appendChild(resContainer);
+                 currentContainer.appendChild(allocDetails);
+                 
+                 rootNode.ondblclick = (e) => {
+                   e.stopPropagation();
+                   const topCallerName = chain.length > 0 ? chain[0] : alloc.name;
+                   const callerSym = symbolsData.find(s => s.name === topCallerName);
+                   if (callerSym && callerSym.file) {
+                       vscode.postMessage({ command: 'openSource', file: callerSym.file, line: callerSym.line || 1 });
+                   } else if (alloc.file) {
+                       vscode.postMessage({ command: 'openSource', file: alloc.file, line: alloc.line || 1 });
+                   }
+                 };
+                 
+                 allocSidebar.appendChild(rootNode);
+              });
+          }
           // ----------------------------------------------------
 
           let regions = {};
