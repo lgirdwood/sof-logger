@@ -833,8 +833,15 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
              }
           });
 
-          // Append uniquely compiled dynamic structures targeting ELF Map arrays seamlessly
+          // Deduplicate mapped pointer definitions evaluating identical upstream memory API nesting traces resolving unique geometry
+          const deduplicatedMap = new Map();
           heapAllocs.forEach(alloc => {
+              deduplicatedMap.set(alloc.addr, alloc);
+          });
+          const finalHeapAllocs = Array.from(deduplicatedMap.values());
+
+          // Append uniquely compiled dynamic structures targeting ELF Map arrays seamlessly
+          finalHeapAllocs.forEach(alloc => {
              symbolsData.push(alloc);
           });
           
@@ -842,9 +849,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           const allocSidebar = document.getElementById('alloc-sidebar');
           if (allocSidebar) {
              allocSidebar.innerHTML = '';
-             heapAllocs.forEach(alloc => {
+             finalHeapAllocs.forEach(alloc => {
                  const rootNode = document.createElement('div');
                  rootNode.className = 'alloc-item';
+                 rootNode.id = 'alloc-node-' + alloc.addr.toString(16);
                  rootNode.style.padding = '4px 6px';
                  rootNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
                  
@@ -1102,7 +1110,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         function isAllocCall(name) {
            if (!name) return false;
            const n = name.toLowerCase();
-           if (n.includes('free')) return false;
+           if (n.includes('free') || n.includes('chunk')) return false;
            return n.includes('alloc') || n.includes('rzalloc') || n.includes('vmh_alloc') || n.includes('heap_alloc');
         }
 
@@ -1166,7 +1174,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
            // Natively drop internal textual overlays truncating visually dense geometries
            if (((visibleSize / planeSize) * 100) > 3) sb.textContent = displayName; 
            
-           sb.onclick = (e) => {
+           sb.ondblclick = (e) => {
                e.stopPropagation();
                if (sym.sect === 'heap_dyn' && sym.caller) {
                    const callerSym = symbolsData.find(s => s.name === sym.caller);
@@ -1177,6 +1185,31 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                    }
                } else if (sym.file) {
                    vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+               }
+           };
+           
+           sb.onclick = (e) => {
+               e.stopPropagation();
+               const allocNode = document.getElementById('alloc-node-' + sym.addr.toString(16));
+               if (allocNode) {
+                    const blockTarget = document.getElementById('mem-block-' + sym.addr.toString(16));
+                    if (blockTarget) {
+                        blockTarget.classList.remove('flash-target');
+                        void blockTarget.offsetWidth;
+                        blockTarget.classList.add('flash-target');
+                    }
+                    
+                    const summaries = allocNode.querySelectorAll('summary');
+                    if (summaries && summaries.length > 0) {
+                        const prev = document.querySelector('.alloc-item summary.selected');
+                        if (prev) prev.classList.remove('selected');
+                        summaries[0].classList.add('selected');
+                    }
+                    
+                    allocNode.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // Open the top-level details recursively evaluating structural hierarchies seamlessly!
+                    const detailsNode = allocNode.querySelector('details');
+                    if (detailsNode) detailsNode.open = true;
                }
            };
 
