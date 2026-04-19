@@ -95,7 +95,7 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     let changed = false;
     let currentExc: number | null = null;
     let currentTlbType: 'I' | 'D' | null = null;
-    let currentTlbDetails: string | null = null;
+    let currentTlbDetails: any = null;
     let currentIoType: 'read' | 'write' | null = null;
     let currentIoDevice: string | null = null;
     let currentIoDetails: string | null = null;
@@ -112,8 +112,9 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     // Parse TLB event
     const tlbMatch = line.match(tlbRegex);
     if (tlbMatch) {
-      currentTlbType = tlbMatch[1].toUpperCase() as 'I' | 'D';
-      currentTlbDetails = tlbMatch[2];
+      if (!currentTlbType) currentTlbType = tlbMatch[1].toUpperCase() as 'I' | 'D';
+      if (!currentTlbDetails) currentTlbDetails = tlbMatch[2];
+      else currentTlbDetails += ' | ' + tlbMatch[2];
       changed = true;
     }
 

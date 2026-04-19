@@ -821,13 +821,23 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               if (n.includes('vmh_alloc')) return 'N/A';
               return args[0]; // For rmalloc, rzalloc, rballoc
            }
+          const pageAttributes = {};
           logData.forEach(d => {
+             if (d.tlbDetails) {
+                 const mtch = d.tlbDetails.match(/paddr=(0x[0-9a-f]+)\\s+asid=(0x[0-9a-f]+)\\s+attr=(0x[0-9a-f]+)(?:\\s+ring=(\\d))?/i);
+                 if (mtch) {
+                     const paddr = parseInt(mtch[1], 16);
+                     const base4k = paddr - (paddr % 4096);
+                     pageAttributes[base4k] = { asid: mtch[2], attr: mtch[3], ring: mtch[4] };
+                 }
+             }
+             
              const core = d.core !== undefined ? d.core : 0;
              if (!coreStacks[core]) coreStacks[core] = [];
              
              if (d.funcArgs) {
                 // Entry Trace
-                const deepStack = coreStacks[core].slice(-4).map(s => s.name);
+                const deepStack = coreStacks[core].map(s => s.name);
                 coreStacks[core].push({ 
                     name: d.funcName, 
                     args: d.funcArgs, 
@@ -1177,6 +1187,43 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                 bDiv.appendChild(sb);
               });
               blocksDiv.appendChild(bDiv);
+              
+              const attrRow = document.createElement('div');
+              attrRow.style.display = 'flex';
+              attrRow.style.width = '100%';
+              attrRow.style.height = '14px';
+              attrRow.style.marginBottom = '6px';
+              
+              for (let offset = 0; offset < bankSize; offset += 4096) {
+                  const pg = bankBase + offset;
+                  const pgAttr = pageAttributes[pg];
+                  
+                  const pDiv = document.createElement('div');
+                  pDiv.style.flex = '1';
+                  pDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
+                  pDiv.style.boxSizing = 'border-box';
+                  pDiv.style.fontSize = '8px';
+                  pDiv.style.textAlign = 'center';
+                  pDiv.style.overflow = 'hidden';
+                  pDiv.style.display = 'flex';
+                  pDiv.style.flexDirection = 'column';
+                  pDiv.style.justifyContent = 'center';
+                  
+                  if (pgAttr) {
+                      const r = pgAttr.ring || '?';
+                      const asidNode = pgAttr.asid === '0xff' ? 'FF' : pgAttr.asid.replace('0x', '');
+                      pDiv.innerHTML = '<div style="line-height:6px;">' + asidNode + '</div><div style="line-height:6px;font-size:7px;color:#eee;">' + r + '</div>';
+                      pDiv.title = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + (r !== '?' ? '\\nRing: ' + r : '');
+                      if (r === '0' || r === '2') pDiv.style.backgroundColor = 'rgba(211, 47, 47, 0.3)';
+                      else if (r === '?') pDiv.style.backgroundColor = 'rgba(25, 118, 210, 0.3)';
+                      else pDiv.style.backgroundColor = 'rgba(56, 142, 60, 0.3)';
+                      pDiv.style.color = '#fff';
+                  } else {
+                      pDiv.style.backgroundColor = 'transparent';
+                  }
+                  attrRow.appendChild(pDiv);
+              }
+              blocksDiv.appendChild(attrRow);
             }
             
             const mapScroll = document.createElement('div');
