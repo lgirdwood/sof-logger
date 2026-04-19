@@ -37,11 +37,15 @@ The SOF Logger translates raw `qemu-exec-default.log` CCOUNT/wall-clock text log
 
 ## Usage
 
-1. Start up your Sound Open Firmware simulation instances on QEMU, verifying `/tmp/qemu-exec-default.log` generates and natively hosts string representations of `T: 00... FUNC ENTRY/RET` flags.
-2. Inside Visual Studio Code, press **`Ctrl+Shift+P`** opens the Command Palette safely.
-3. Type and execute: **`SOF Logger: Visualize QEMU Log`**.
-4. The Visualization Webview will immediately lock rendering boundaries over the graph structures natively while asynchronously retrieving and syncing all underlying address components cleanly. 
-5. To load full file context paths to navigate through C-files directly, click the **`Load ELF Symbols`** toolbar button natively and point it correctly towards your primary `zephyr.elf` compiled source target.
+1. Collect execution logs from QEMU by running the simulation with explicit tracing flags. Use the following generic command structure (replace paths with your local repository locations):
+   ```sh
+   <path/to/qemu>/build/qemu-system-xtensa -machine adsp_ace30 -kernel <path/to/sof>/build-ptl/zephyr/zephyr.ri -display none -serial mon:stdio -icount shift=5,align=off -smp 5 -d func,int,mmu -D /tmp/qemu-exec-default.log
+   ```
+2. Verify `/tmp/qemu-exec-default.log` generated successfully and natively hosts string representations of `T: 00... FUNC ENTRY/RET` trace flags.
+3. Inside Visual Studio Code, press **`Ctrl+Shift+P`** to open the Command Palette safely.
+4. Type and execute: **`SOF Logger: Visualize QEMU Log`**.
+5. The Visualization Webview will immediately lock rendering boundaries over the graph structures natively while asynchronously retrieving and syncing all underlying address components cleanly.
+6. To load full file context paths to navigate through C-files directly, click the **`Load ELF Symbols`** toolbar button natively and point it correctly towards your primary `zephyr.elf` compiled source target.
 
 ### Chart Mechanics
 - **Scroll Wheel**: Smooth, high-performance decimation bounding box zoom!
