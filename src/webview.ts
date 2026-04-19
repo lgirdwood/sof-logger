@@ -718,14 +718,6 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           const coreStacks = {};
           const heapAllocs = [];
 
-          function isAllocCall(name) {
-              if (!name) return false;
-              const n = name.toLowerCase();
-              if (n.includes('free')) return false;
-              // Explicitly capture all SOF memory APIs tracked natively in alloc.c
-              return n.includes('alloc') || n.includes('rzalloc') || n.includes('vmh_alloc') || n.includes('heap_alloc');
-          }
-
           function guessAllocSize(name, args) {
              if (!args) return 0;
              const n = name.toLowerCase();
@@ -1043,6 +1035,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           });
         }
         
+        function isAllocCall(name) {
+           if (!name) return false;
+           const n = name.toLowerCase();
+           if (n.includes('free')) return false;
+           return n.includes('alloc') || n.includes('rzalloc') || n.includes('vmh_alloc') || n.includes('heap_alloc');
+        }
+
         function createMemBlock(sym, baseAddr, planeSize) {
            const sb = document.createElement('div');
            sb.className = 'mem-block';
@@ -1084,12 +1083,23 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
            sb.style.left = ((offset / planeSize) * 100) + '%';
            sb.style.width = ((visibleSize / planeSize) * 100) + '%';
            
-           let titleText = sym.name + ' \\nAddr: 0x' + sym.addr.toString(16) + '\\nLayout Size: ' + sym.size + ' bytes';
+           let displayName = sym.name;
+           if (sym.stackChain && sym.stackChain.length > 0) {
+               displayName = sym.stackChain[sym.stackChain.length - 1]; 
+               for (let i = sym.stackChain.length - 1; i >= 0; i--) {
+                   if (!isAllocCall(sym.stackChain[i])) {
+                       displayName = sym.stackChain[i];
+                       break;
+                   }
+               }
+           }
+
+           let titleText = displayName + ' \\nAddr: 0x' + sym.addr.toString(16) + '\\nLayout Size: ' + sym.size + ' bytes';
            if (sym.file) titleText += '\\nFile: ' + sym.file + ':' + (sym.line || 1);
            sb.title = titleText;
            
            // Natively drop internal textual overlays truncating visually dense geometries
-           if (((visibleSize / planeSize) * 100) > 3) sb.textContent = sym.name; 
+           if (((visibleSize / planeSize) * 100) > 3) sb.textContent = displayName; 
            
            sb.onclick = (e) => {
                e.stopPropagation();
