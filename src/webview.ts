@@ -634,10 +634,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         function handleMapZoom(e) {
           e.preventDefault();
           let delta = e.deltaY > 0 ? -0.1 : 0.1;
-          if (mapZoom > 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
-          if (mapZoom > 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
+          if (mapZoom >= 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
+          if (mapZoom >= 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
+          if (mapZoom >= 15.0) delta = e.deltaY > 0 ? -5.0 : 5.0;
+          if (mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
+          if (mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
           
-          const newZoom = Math.max(1.0, Math.min(30.0, mapZoom + delta));
+          const newZoom = Math.max(1.0, Math.min(300.0, mapZoom + delta));
           if (newZoom === mapZoom) return;
           
           const allData = Array.from(document.querySelectorAll('.map-scrollable')).map(scrollable => {
@@ -891,6 +894,27 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                    }
                  };
                  
+                 rootNode.onclick = (e) => {
+                    const blockTarget = document.getElementById('mem-block-' + alloc.addr.toString(16));
+                    if (blockTarget) {
+                        mapZoom = 50.0;
+                        document.querySelectorAll('.map-inner').forEach(inner => {
+                           // @ts-ignore
+                           inner.style.width = (mapZoom * 100) + '%';
+                        });
+                        setTimeout(() => {
+                           blockTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                           const oldBg = blockTarget.style.backgroundColor;
+                           blockTarget.style.backgroundColor = '#ffff00';
+                           blockTarget.style.color = '#000';
+                           setTimeout(() => { 
+                               blockTarget.style.backgroundColor = oldBg; 
+                               blockTarget.style.color = '#fff';
+                           }, 2000);
+                        }, 50);
+                    }
+                 };
+                 
                  allocSidebar.appendChild(rootNode);
               });
           }
@@ -1045,6 +1069,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         function createMemBlock(sym, baseAddr, planeSize) {
            const sb = document.createElement('div');
            sb.className = 'mem-block';
+           sb.id = 'mem-block-' + sym.addr.toString(16);
            sb.style.position = 'absolute';
            sb.style.height = '100%';
 
