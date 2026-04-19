@@ -644,6 +644,43 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           }
         }
 
+        function updateEdgeLabels() {
+            document.querySelectorAll('.map-scrollable').forEach(scrollable => {
+                const inner = scrollable.querySelector('.map-inner');
+                if (!inner) return;
+                
+                // Use scroll measurements directly resolving bounding offsets relative to zoomed capacities
+                const ratioLeft = scrollable.scrollLeft / inner.scrollWidth;
+                const ratioRight = (scrollable.scrollLeft + scrollable.clientWidth) / inner.scrollWidth;
+                
+                scrollable.querySelectorAll('.bank-row').forEach(bDiv => {
+                    // @ts-ignore
+                    const bankBase = parseInt(bDiv.dataset.base, 10);
+                    // @ts-ignore
+                    const bankSize = parseInt(bDiv.dataset.size, 10);
+                    
+                    const leftAddr = bankBase + (ratioLeft * bankSize);
+                    const rightAddr = bankBase + (ratioRight * bankSize);
+                    
+                    // Match precisely structural 4K page bounds rounding explicitly evaluating absolute chunks!
+                    const pageLeft = Math.floor(leftAddr / 4096) * 4096;
+                    // Cap right bound conservatively at bankLimit - 1 equivalent
+                    const pageRight = Math.min((Math.ceil(rightAddr / 4096) * 4096) - 1, bankBase + bankSize - 1);
+                    
+                    const startL = bDiv.querySelector('.start-label');
+                    const endL = bDiv.querySelector('.end-label');
+                    if (startL) {
+                        startL.textContent = '0x' + Math.max(bankBase, pageLeft).toString(16).toUpperCase();
+                        startL.style.left = (scrollable.scrollLeft + 2) + 'px';
+                    }
+                    if (endL) {
+                        endL.textContent = '0x' + pageRight.toString(16).toUpperCase();
+                        endL.style.left = (scrollable.scrollLeft + scrollable.clientWidth - endL.offsetWidth - 2) + 'px';
+                    }
+                });
+            });
+        }
+
         let mapZoom = 1.0;
         function handleMapZoom(e) {
           e.preventDefault();
@@ -653,8 +690,9 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           if (mapZoom >= 15.0) delta = e.deltaY > 0 ? -5.0 : 5.0;
           if (mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
           if (mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
+          if (mapZoom >= 300.0) delta = e.deltaY > 0 ? -50.0 : 50.0;
           
-          const newZoom = Math.max(0.1, Math.min(300.0, mapZoom + delta));
+          const newZoom = Math.max(0.1, Math.min(2000.0, mapZoom + delta));
           if (newZoom === mapZoom) return;
           
           const allData = Array.from(document.querySelectorAll('.map-scrollable')).map(scrollable => {
@@ -685,6 +723,8 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
              const ratio = (d.oldScroll + d.pX) / d.oldWidth;
              d.scrollable.scrollLeft = (ratio * newWidth) - d.pX;
           });
+          
+          updateEdgeLabels();
         }
 
         function renderMemoryMap() {
@@ -730,6 +770,8 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                 container.style.cursor = 'auto';
              }
           });
+          
+          container.addEventListener('scroll', () => { updateEdgeLabels(); }, true);
           
           if (!symbolsData || symbolsData.length === 0) {
             container.innerHTML = '<p><i>Please use the "Load ELF Symbols" button successfully before tracing Hardware Memory allocations!</i></p>';
@@ -868,6 +910,14 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                     summary.style.padding = '2px 0';
                     summary.textContent = funcName;
                     
+                    summary.ondblclick = (e) => {
+                        e.stopPropagation();
+                        const sym = symbolsData.find(s => s.name === funcName);
+                        if (sym && sym.file) {
+                            vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+                        }
+                    };
+                    
                     details.appendChild(summary);
                     
                     const innerContainer = document.createElement('div');
@@ -890,6 +940,14 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  allocSummary.style.fontWeight = 'bold';
                  allocSummary.textContent = alloc.name;
                  
+                 allocSummary.ondblclick = (e) => {
+                     e.stopPropagation();
+                     const sym = symbolsData.find(s => s.name === alloc.name);
+                     if (sym && sym.file) {
+                         vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+                     }
+                 };
+                 
                  allocDetails.appendChild(allocSummary);
                  
                  const resContainer = document.createElement('div');
@@ -909,17 +967,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  
                  allocDetails.appendChild(resContainer);
                  currentContainer.appendChild(allocDetails);
-                 
-                 rootNode.ondblclick = (e) => {
-                   e.stopPropagation();
-                   const topCallerName = chain.length > 0 ? chain[0] : alloc.name;
-                   const callerSym = symbolsData.find(s => s.name === topCallerName);
-                   if (callerSym && callerSym.file) {
-                       vscode.postMessage({ command: 'openSource', file: callerSym.file, line: callerSym.line || 1 });
-                   } else if (alloc.file) {
-                       vscode.postMessage({ command: 'openSource', file: alloc.file, line: alloc.line || 1 });
-                   }
-                 };
+                 // Remove generic rootNode.ondblclick handler isolating execution targets inherently
                  
                  rootNode.onclick = (e) => {
                     const blockTarget = document.getElementById('mem-block-' + alloc.addr.toString(16));
@@ -1034,8 +1082,12 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
               bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
               bDiv.title = rName + ' Row ' + idx + ' (0x' + bankBase.toString(16).toUpperCase() + ')';
+              bDiv.className = 'bank-row';
+              bDiv.dataset.base = bankBase.toString();
+              bDiv.dataset.size = bankSize.toString();
               
               const startLabel = document.createElement('span');
+              startLabel.className = 'start-label';
               startLabel.textContent = '0x' + bankBase.toString(16).toUpperCase();
               startLabel.style.position = 'absolute';
               startLabel.style.left = '2px';
@@ -1047,9 +1099,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               startLabel.style.zIndex = '5';
               
               const endLabel = document.createElement('span');
+              endLabel.className = 'end-label';
               endLabel.textContent = '0x' + (bankLimit - 1).toString(16).toUpperCase();
               endLabel.style.position = 'absolute';
-              endLabel.style.right = '2px';
+              endLabel.style.left = '100px'; // Set dynamically by Javascript updateEdgeLabels
               endLabel.style.top = '2px';
               endLabel.style.fontSize = '10px';
               endLabel.style.color = '#fff';
@@ -1057,6 +1110,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               endLabel.style.padding = '0 3px';
               endLabel.style.zIndex = '5';
               
+              bDiv.appendChild(startLabel);
               bDiv.appendChild(endLabel);
               
               for (let offset = 4096; offset < bankSize; offset += 4096) {
@@ -1126,17 +1180,17 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
 
            // Explicitly intercept and mark Heap Allocations in High Contrast Red natively 
            if (sym.sect === 'heap_dyn' || (sym.name && sym.name.toLowerCase().includes('heap'))) {
-               bg = 'rgba(211, 47, 47, 0.9)'; // Red
+               bg = 'rgba(211, 47, 47, 0.4)'; // Red
                fg = '#fff';
            } else if (sym.sect === 'text') {
-               bg = 'rgba(25, 118, 210, 0.85)'; // Blue
+               bg = 'rgba(25, 118, 210, 0.4)'; // Blue
            } else if (sym.sect === 'rodata') {
-               bg = 'rgba(56, 142, 60, 0.85)'; // Green
+               bg = 'rgba(56, 142, 60, 0.4)'; // Green
            } else if (sym.sect === 'data') { 
-               bg = 'rgba(129, 199, 132, 0.85)'; // Light Green
+               bg = 'rgba(129, 199, 132, 0.4)'; // Light Green
                fg = '#000'; 
            } else if (sym.sect === 'bss') {
-               bg = 'rgba(123, 31, 162, 0.85)'; // Purple
+               bg = 'rgba(123, 31, 162, 0.4)'; // Purple
            }
 
            sb.style.backgroundColor = bg;
