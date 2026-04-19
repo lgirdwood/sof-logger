@@ -800,6 +800,8 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
              
              if (n.includes('rzalloc')) return a[1]; // (flags, bytes)
              if (n.includes('rbrealloc') || n.includes('realloc')) return a[2]; // (ptr, flags, bytes, ...)
+             if (n.includes('vmh_alloc')) return a[1]; // (heap, alloc_size)
+             if (n.includes('vmh_alloc')) return a[1]; // (heap, alloc_size)
              
              if (n.includes('sys_heap_aligned_alloc')) return a[2]; // (heap, align, bytes)
              if (n.includes('sys_heap_alloc') || n.includes('z_malloc_heap')) return a[1]; // (heap, bytes)
@@ -816,6 +818,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               if (n.includes('rbrealloc') || n.includes('realloc')) return args[1];
               if (n.includes('sys_heap_') || n.includes('z_malloc_')) return 'N/A';
               if (n.includes('l3_heap_alloc') || n.includes('heap_alloc_aligned')) return 'N/A';
+              if (n.includes('vmh_alloc')) return 'N/A';
               return args[0]; // For rmalloc, rzalloc, rballoc
            }
           logData.forEach(d => {
@@ -875,12 +878,39 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
              }
           });
 
-          // Deduplicate mapped pointer definitions evaluating identical upstream memory API nesting traces resolving unique geometry
-          const deduplicatedMap = new Map();
+          // We evaluate allocation components sequentially to correctly fold wrapper pointers (like rzalloc) possessing shifted address offsets safely into their exact originating vmh_alloc footprint seamlessly!
+          const finalHeapAllocs = [];
           heapAllocs.forEach(alloc => {
-              deduplicatedMap.set(alloc.addr, alloc);
+              // Ignore any child beneath the fundamental physical boundary
+              if (alloc.stackChain.includes('vmh_alloc') && alloc.name !== 'vmh_alloc') return;
+              
+              if (!alloc.visualName) {
+                  alloc.visualName = alloc.name;
+                  alloc.visualStack = alloc.stackChain || [];
+              }
+              
+              // Scan backwards to find if this is just a wrapper finishing over its explicit internal payload.
+              let replaced = false;
+              for (let i = finalHeapAllocs.length - 1; i >= Math.max(0, finalHeapAllocs.length - 15); i--) {
+                  const prev = finalHeapAllocs[i];
+                  if (prev.stackChain && prev.stackChain.includes(alloc.name)) {
+                      // It belongs to the same execution trace! The child (prev) contains the parent (alloc) natively.
+                      // We overwrite the child's visual representation globally with the parent's parameters natively, 
+                      // stripping the inner API from the TreeView dynamically!
+                      prev.visualName = alloc.name;
+                      prev.visualStack = alloc.stackChain || [alloc.name];
+                      prev.args = alloc.args; // Update explicit arg strings explicitly for Sidebar
+                      prev.file = alloc.file;
+                      prev.line = alloc.line;
+                      replaced = true;
+                      break;
+                  }
+              }
+              
+              if (!replaced) {
+                  finalHeapAllocs.push(alloc);
+              }
           });
-          const finalHeapAllocs = Array.from(deduplicatedMap.values());
 
           // Append uniquely compiled dynamic structures targeting ELF Map arrays seamlessly
           finalHeapAllocs.forEach(alloc => {
@@ -899,7 +929,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  rootNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
                  
                  let currentContainer = rootNode;
-                 const chain = alloc.stackChain || [];
+                 const chain = alloc.visualStack || alloc.stackChain || [];
                  
                  chain.forEach((funcName, idx) => {
                     const details = document.createElement('details');
@@ -938,11 +968,11 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  allocSummary.style.fontSize = '12px';
                  allocSummary.style.color = '#e53935'; 
                  allocSummary.style.fontWeight = 'bold';
-                 allocSummary.textContent = alloc.name;
+                 allocSummary.textContent = alloc.visualName || alloc.name;
                  
                  allocSummary.ondblclick = (e) => {
                      e.stopPropagation();
-                     const sym = symbolsData.find(s => s.name === alloc.name);
+                     const sym = symbolsData.find(s => s.name === (alloc.visualName || alloc.name));
                      if (sym && sym.file) {
                          vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
                      }
@@ -1161,8 +1191,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           });
         }
         
-        function isAllocCall(name) {
+        // Truncate evaluation logic below 'vmh_alloc' because internal parameters duplicate pointer shifts corrupting boundaries.
+        function isAllocCall(name, stackChain = []) {
            if (!name) return false;
+           if (stackChain.includes('vmh_alloc')) return false;
            const n = name.toLowerCase();
            if (n.includes('free') || n.includes('chunk')) return false;
            return n.includes('alloc') || n.includes('rzalloc') || n.includes('vmh_alloc') || n.includes('heap_alloc');
