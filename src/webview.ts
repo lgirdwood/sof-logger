@@ -866,13 +866,27 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               return args[0]; // For rmalloc, rzalloc, rballoc
            }
           const pageAttributes = {};
-          logData.forEach(d => {
+          const tlbRanges = [];
+          let lastTlbAttrObj = null;
+          let lastTlbPaddr = null;
+          logData.forEach((d) => {
              if (d.tlbDetails) {
                  const mtch = d.tlbDetails.match(/paddr=(0x[0-9a-f]+)\\s+asid=(0x[0-9a-f]+)\\s+attr=(0x[0-9a-f]+)(?:\\s+ring=(\\d))?/i);
                  if (mtch) {
-                     const paddr = parseInt(mtch[1], 16);
-                     const base4k = paddr - (paddr % 4096);
-                     pageAttributes[base4k] = { asid: mtch[2], attr: mtch[3], ring: mtch[4] };
+                     lastTlbPaddr = parseInt(mtch[1], 16);
+                     lastTlbAttrObj = { asid: mtch[2], attr: mtch[3], ring: mtch[4] };
+                     const base4k = lastTlbPaddr - (lastTlbPaddr % 4096);
+                     pageAttributes[base4k] = lastTlbAttrObj;
+                 }
+                 
+                 const pgSizeMtch = d.tlbDetails.match(/page_size=(0x[0-9a-f]+)/i);
+                 if (pgSizeMtch && lastTlbAttrObj && lastTlbPaddr !== null) {
+                     const pageSize = parseInt(pgSizeMtch[1], 16);
+                     const baseBase = lastTlbPaddr - (lastTlbPaddr % 4096);
+                     
+                     tlbRanges.push({ start: baseBase, end: baseBase + pageSize, attr: lastTlbAttrObj });
+                     lastTlbAttrObj = null;
+                     lastTlbPaddr = null;
                  }
              }
              
@@ -1244,7 +1258,26 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               
               for (let offset = 0; offset < bankSize; offset += 4096) {
                   const pg = bankBase + offset;
-                  const pgAttr = pageAttributes[pg];
+                  
+                  let extRing = null;
+                  let extAsid = null;
+                  let extAttr = null;
+                  
+                  for (let i = tlbRanges.length - 1; i >= 0; i--) {
+                      if (pg >= tlbRanges[i].start && pg < tlbRanges[i].end) {
+                          if (extRing === null && tlbRanges[i].attr.ring !== undefined) extRing = tlbRanges[i].attr.ring;
+                          if (extAsid === null && tlbRanges[i].attr.asid !== undefined) extAsid = tlbRanges[i].attr.asid;
+                          if (extAttr === null && tlbRanges[i].attr.attr !== undefined) extAttr = tlbRanges[i].attr.attr;
+                          if (extRing !== null && extAsid !== null && extAttr !== null) break;
+                      }
+                  }
+                  
+                  const rootPg = pageAttributes[pg] || { ring: '0', asid: '0x0', attr: '0x0' };
+                  if (extRing === null) extRing = rootPg.ring !== undefined ? rootPg.ring : '0';
+                  if (extAsid === null) extAsid = rootPg.asid !== undefined ? rootPg.asid : '0x0';
+                  if (extAttr === null) extAttr = rootPg.attr !== undefined ? rootPg.attr : '0x0';
+                  
+                  const pgAttr = { ring: extRing, asid: extAsid, attr: extAttr };
                   
                   const rDiv = document.createElement('div');
                   const aDiv = document.createElement('div');
@@ -1256,70 +1289,67 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   aDiv.style.cssText = cellStyle;
                   atDiv.style.cssText = cellStyle;
                   
-                  if (pgAttr) {
-                      const r = pgAttr.ring || '?';
-                      const asidNode = pgAttr.asid === '0xff' ? 'FF' : pgAttr.asid.replace('0x', '');
-                      const attrHex = pgAttr.attr.replace('0x', '').toUpperCase();
-                      
-                      const attrAbbrev = {
-                          '0': 'Ill',
-                          '1': 'WT KRW',
-                          '2': 'WT KRWX',
-                          '3': 'Bypass',
-                          '4': 'WB KRW',
-                          '5': 'WB KRWX',
-                          '6': 'WB URW',
-                          '7': 'WB URWX',
-                          '8': 'WT URW',
-                          '9': 'WT URWX',
-                          'A': 'UG KRW',
-                          'B': 'UG KRWX',
-                          'C': 'UG URW',
-                          'D': 'UG URWX',
-                          'E': 'Isolated',
-                          'F': 'UC KRWX'
-                      };
-                      const attrTitles = {
-                          '0': 'Illegal / Unmapped (Triggers exception)',
-                          '1': 'Write-Through, Kernel (R/W)',
-                          '2': 'Write-Through, Kernel (R/W/X)',
-                          '3': 'Cache Bypass, Full R/W/X for ALL Rings (Power-On)',
-                          '4': 'Write-Back, Kernel (R/W)',
-                          '5': 'Write-Back, Kernel (R/W/X)',
-                          '6': 'Write-Back, Userspace (R/W)',
-                          '7': 'Write-Back, Userspace (R/W/X)',
-                          '8': 'Write-Through, Userspace (R/W)',
-                          '9': 'Write-Through, Userspace (R/W/X)',
-                          'A': 'Cache Bypass, Kernel (R/W)',
-                          'B': 'Cache Bypass, Kernel (R/W/X)',
-                          'C': 'Cache Bypass, Userspace (R/W)',
-                          'D': 'Cache Bypass, Userspace (R/W/X)',
-                          'E': 'Platform Specific / Isolated RAM',
-                          'F': 'Cache Bypass, Kernel R/W/X (MMIO / Dev Regs)'
-                      };
-                      
-                      rDiv.textContent = 'R:' + r;
-                      aDiv.textContent = 'A:' + asidNode;
-                      atDiv.textContent = attrAbbrev[attrHex] || attrHex;
-                      
-                      const attrDesc = attrTitles[attrHex] ? ' (' + attrTitles[attrHex] + ')' : '';
-                      const titleStr = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\\nRing: ' + r : '');
-                      rDiv.title = titleStr;
-                      aDiv.title = titleStr;
-                      atDiv.title = titleStr;
-                      
-                      let bg = 'transparent';
-                      if (r === '0' || r === '2') bg = 'rgba(211, 47, 47, 0.4)';
-                      else if (r === '?') bg = 'rgba(25, 118, 210, 0.3)';
-                      else bg = 'rgba(56, 142, 60, 0.3)';
-                      
-                      rDiv.style.backgroundColor = bg;
-                      aDiv.style.backgroundColor = bg;
-                      atDiv.style.backgroundColor = bg;
-                      rDiv.style.color = '#fff';
-                      aDiv.style.color = '#fff';
-                      atDiv.style.color = '#fff';
-                  }
+                  const r = pgAttr.ring || '?';
+                  const asidNode = pgAttr.asid === '0xff' ? 'FF' : pgAttr.asid.replace('0x', '');
+                  const attrHex = pgAttr.attr.replace('0x', '').toUpperCase();
+                  
+                  const attrAbbrev = {
+                      '0': 'Ill',
+                      '1': 'WT KRW',
+                      '2': 'WT KRWX',
+                      '3': 'Bypass',
+                      '4': 'WB KRW',
+                      '5': 'WB KRWX',
+                      '6': 'WB URW',
+                      '7': 'WB URWX',
+                      '8': 'WT URW',
+                      '9': 'WT URWX',
+                      'A': 'UG KRW',
+                      'B': 'UG KRWX',
+                      'C': 'UG URW',
+                      'D': 'UG URWX',
+                      'E': 'Isolated',
+                      'F': 'UC KRWX'
+                  };
+                  const attrTitles = {
+                      '0': 'Illegal / Unmapped (Triggers exception)',
+                      '1': 'Write-Through, Kernel (R/W)',
+                      '2': 'Write-Through, Kernel (R/W/X)',
+                      '3': 'Cache Bypass, Full R/W/X for ALL Rings (Power-On)',
+                      '4': 'Write-Back, Kernel (R/W)',
+                      '5': 'Write-Back, Kernel (R/W/X)',
+                      '6': 'Write-Back, Userspace (R/W)',
+                      '7': 'Write-Back, Userspace (R/W/X)',
+                      '8': 'Write-Through, Userspace (R/W)',
+                      '9': 'Write-Through, Userspace (R/W/X)',
+                      'A': 'Cache Bypass, Kernel (R/W)',
+                      'B': 'Cache Bypass, Kernel (R/W/X)',
+                      'C': 'Cache Bypass, Userspace (R/W)',
+                      'D': 'Cache Bypass, Userspace (R/W/X)',
+                      'E': 'Platform Specific / Isolated RAM',
+                      'F': 'Cache Bypass, Kernel R/W/X (MMIO / Dev Regs)'
+                  };
+                  
+                  rDiv.textContent = 'R:' + r;
+                  aDiv.textContent = 'A:' + asidNode;
+                  atDiv.textContent = attrAbbrev[attrHex] || attrHex;
+                  
+                  const attrDesc = attrTitles[attrHex] ? ' (' + attrTitles[attrHex] + ')' : '';
+                  const titleStr = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\\nRing: ' + r : '');
+                  rDiv.title = titleStr;
+                  aDiv.title = titleStr;
+                  atDiv.title = titleStr;
+                  
+                  const defBg = 'rgba(56, 142, 60, 0.3)';
+                  const diffBg = 'rgba(211, 47, 47, 0.4)';
+                  
+                  rDiv.style.backgroundColor = (r === '0') ? defBg : diffBg;
+                  aDiv.style.backgroundColor = (asidNode === '0') ? defBg : diffBg;
+                  atDiv.style.backgroundColor = (attrHex === '0') ? defBg : diffBg;
+                  
+                  rDiv.style.color = '#fff';
+                  aDiv.style.color = '#fff';
+                  atDiv.style.color = '#fff';
                   
                   ringRow.appendChild(rDiv);
                   asidRow.appendChild(aDiv);
