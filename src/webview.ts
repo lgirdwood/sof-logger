@@ -111,6 +111,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
       </div>
 
       <script>
+        try {
         const logData = ${JSON.stringify(data)};
         const symbolsData = ${JSON.stringify(symbols)};
         const regionsMeta = ${JSON.stringify(regionsMeta)};
@@ -682,96 +683,122 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         }
 
         let mapZoom = 1.0;
-        function handleMapZoom(e) {
-          e.preventDefault();
-          let delta = e.deltaY > 0 ? -0.1 : 0.1;
-          if (mapZoom >= 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
-          if (mapZoom >= 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
-          if (mapZoom >= 15.0) delta = e.deltaY > 0 ? -5.0 : 5.0;
-          if (mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
-          if (mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
-          if (mapZoom >= 300.0) delta = e.deltaY > 0 ? -50.0 : 50.0;
-          
-          const newZoom = Math.max(0.1, Math.min(2000.0, mapZoom + delta));
-          if (newZoom === mapZoom) return;
-          
-          const allData = Array.from(document.querySelectorAll('.map-scrollable')).map(scrollable => {
-             const rect = scrollable.getBoundingClientRect();
-             const pX = e.clientX - rect.left;
-             const oldScroll = scrollable.scrollLeft;
-             const mapInner = scrollable.querySelector('.map-inner');
-             const oldWidth = mapInner ? mapInner.offsetWidth : 1;
-             return { scrollable, pX, oldScroll, mapInner, oldWidth };
-          });
-
-          mapZoom = newZoom;
-          
-          const inners = document.querySelectorAll('.map-inner');
-          inners.forEach(inner => {
-             // @ts-ignore
-             inner.style.width = (mapZoom * 100) + '%';
-          });
-          
-          document.querySelectorAll('.addr-marker').forEach(marker => {
-             // @ts-ignore
-             marker.style.display = (mapZoom >= parseFloat(marker.dataset.z)) ? 'block' : 'none';
-          });
-          
-          allData.forEach(d => {
-             if (!d.mapInner) return;
-             const newWidth = d.mapInner.offsetWidth;
-             const ratio = (d.oldScroll + d.pX) / d.oldWidth;
-             d.scrollable.scrollLeft = (ratio * newWidth) - d.pX;
-          });
-          
-          updateEdgeLabels();
-        }
+        let redrawTimeout = null;
+        let baseZoom = 1.0;
+        let visualPanX = 0;
+        let visualPanY = 0;
 
         function renderMemoryMap() {
           const container = document.getElementById('memory-map-container');
           if (!container) return;
           if (container.children.length > 0) return; // already rendered
-          
-          container.addEventListener('wheel', handleMapZoom, { passive: false });
-          
+
           let isDragging = false;
           let startX = 0;
           let startY = 0;
+          let dxGlobal = 0;
           let scrollLeftStarts = [];
           let scrollTopStart = 0;
           const layoutContainer = document.getElementById('memoryMapLayout');
 
+          function commitRedraw() {
+              baseZoom = mapZoom;
+              visualPanX = 0;
+              visualPanY = 0;
+              
+              document.querySelectorAll('.map-scrollable').forEach(scrollable => {
+                 const inner = scrollable.querySelector('.map-inner');
+                 if (inner) {
+                     inner.style.transform = '';
+                     // @ts-ignore
+                     inner.style.width = (mapZoom * 100) + '%';
+                 }
+              });
+              
+              document.querySelectorAll('.addr-marker').forEach(marker => {
+                 // @ts-ignore
+                 marker.style.display = (mapZoom >= parseFloat(marker.dataset.z)) ? 'block' : 'none';
+              });
+              
+              // Restore scroll states synchronously
+              if (scrollLeftStarts.length > 0) {
+                 const newLeft = scrollLeftStarts[0].startLeft - dxGlobal;
+                 scrollLeftStarts.forEach(obj => { obj.el.scrollLeft = newLeft; });
+              }
+              
+              updateEdgeLabels();
+          }
+
+          container.addEventListener('wheel', (e) => {
+              e.preventDefault();
+              let delta = e.deltaY > 0 ? -0.1 : 0.1;
+              if (mapZoom >= 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
+              if (mapZoom >= 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
+              if (mapZoom >= 15.0) delta = e.deltaY > 0 ? -5.0 : 5.0;
+              if (mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
+              if (mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
+              if (mapZoom >= 300.0) delta = e.deltaY > 0 ? -50.0 : 50.0;
+              
+              mapZoom = Math.max(0.1, Math.min(2000.0, mapZoom + delta));
+              
+              const scale = mapZoom / baseZoom;
+              document.querySelectorAll('.map-inner').forEach(inner => {
+                  // @ts-ignore
+                  inner.style.transformOrigin = e.offsetX + 'px center';
+                  // @ts-ignore
+                  inner.style.transform = 'scaleX(' + scale + ')';
+              });
+              
+              clearTimeout(redrawTimeout);
+              redrawTimeout = setTimeout(() => { commitRedraw(); }, 200);
+          }, { passive: false });
+          
           container.addEventListener('mousedown', (e) => {
              isDragging = true;
              startX = e.pageX;
              startY = e.pageY;
+             dxGlobal = 0;
              scrollLeftStarts = Array.from(document.querySelectorAll('.map-scrollable')).map(s => ({
                 el: s,
                 startLeft: s.scrollLeft
              }));
              if (layoutContainer) scrollTopStart = layoutContainer.scrollTop;
              container.style.cursor = 'grabbing';
+             clearTimeout(redrawTimeout);
           });
 
           window.addEventListener('mousemove', (e) => {
              if (!isDragging) return;
              e.preventDefault();
-             const dx = e.pageX - startX;
+             dxGlobal = e.pageX - startX;
              const dy = e.pageY - startY;
-             scrollLeftStarts.forEach(obj => {
-                obj.el.scrollLeft = obj.startLeft - dx;
+             
+             document.querySelectorAll('.map-inner').forEach(inner => {
+                 // scaleX applies visual modifications without recomputing layouts!
+                 // @ts-ignore
+                 inner.style.transform = 'translateX(' + dxGlobal + 'px)';
              });
+             
              if (layoutContainer) layoutContainer.scrollTop = scrollTopStart - dy;
+             
+             clearTimeout(redrawTimeout);
+             redrawTimeout = setTimeout(() => { commitRedraw(); }, 150);
           });
 
           window.addEventListener('mouseup', () => {
              if (isDragging) {
                 isDragging = false;
                 container.style.cursor = 'auto';
+                clearTimeout(redrawTimeout);
+                commitRedraw();
              }
           });
           
-          container.addEventListener('scroll', () => { updateEdgeLabels(); }, true);
+          let scrollDebounce = null;
+          container.addEventListener('scroll', () => { 
+             clearTimeout(scrollDebounce);
+             scrollDebounce = setTimeout(() => { updateEdgeLabels(); }, 100);
+          }, true);
           
           if (!symbolsData || symbolsData.length === 0) {
             container.innerHTML = '<p><i>Please use the "Load ELF Symbols" button successfully before tracing Hardware Memory allocations!</i></p>';
@@ -1348,6 +1375,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
            };
 
            return sb;
+        }
+        } catch (e) {
+            document.body.innerHTML = '<h1 style="color:red;">Exception Caught</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\\n' + e.stack + '</pre>';
+            console.error(e);
         }
       </script>
     </body>
