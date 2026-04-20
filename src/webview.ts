@@ -1259,13 +1259,51 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   if (pgAttr) {
                       const r = pgAttr.ring || '?';
                       const asidNode = pgAttr.asid === '0xff' ? 'FF' : pgAttr.asid.replace('0x', '');
-                      const attrStr = pgAttr.attr.replace('0x', '');
+                      const attrHex = pgAttr.attr.replace('0x', '').toUpperCase();
+                      
+                      const attrAbbrev = {
+                          '0': 'Ill',
+                          '1': 'WT KRW',
+                          '2': 'WT KRWX',
+                          '3': 'Bypass',
+                          '4': 'WB KRW',
+                          '5': 'WB KRWX',
+                          '6': 'WB URW',
+                          '7': 'WB URWX',
+                          '8': 'WT URW',
+                          '9': 'WT URWX',
+                          'A': 'UG KRW',
+                          'B': 'UG KRWX',
+                          'C': 'UG URW',
+                          'D': 'UG URWX',
+                          'E': 'Isolated',
+                          'F': 'UC KRWX'
+                      };
+                      const attrTitles = {
+                          '0': 'Illegal / Unmapped (Triggers exception)',
+                          '1': 'Write-Through, Kernel (R/W)',
+                          '2': 'Write-Through, Kernel (R/W/X)',
+                          '3': 'Cache Bypass, Full R/W/X for ALL Rings (Power-On)',
+                          '4': 'Write-Back, Kernel (R/W)',
+                          '5': 'Write-Back, Kernel (R/W/X)',
+                          '6': 'Write-Back, Userspace (R/W)',
+                          '7': 'Write-Back, Userspace (R/W/X)',
+                          '8': 'Write-Through, Userspace (R/W)',
+                          '9': 'Write-Through, Userspace (R/W/X)',
+                          'A': 'Cache Bypass, Kernel (R/W)',
+                          'B': 'Cache Bypass, Kernel (R/W/X)',
+                          'C': 'Cache Bypass, Userspace (R/W)',
+                          'D': 'Cache Bypass, Userspace (R/W/X)',
+                          'E': 'Platform Specific / Isolated RAM',
+                          'F': 'Cache Bypass, Kernel R/W/X (MMIO / Dev Regs)'
+                      };
                       
                       rDiv.textContent = 'R:' + r;
                       aDiv.textContent = 'A:' + asidNode;
-                      atDiv.textContent = 'M:' + attrStr;
+                      atDiv.textContent = attrAbbrev[attrHex] || attrHex;
                       
-                      const titleStr = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + (r !== '?' ? '\\nRing: ' + r : '');
+                      const attrDesc = attrTitles[attrHex] ? ' (' + attrTitles[attrHex] + ')' : '';
+                      const titleStr = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\\nRing: ' + r : '');
                       rDiv.title = titleStr;
                       aDiv.title = titleStr;
                       atDiv.title = titleStr;
