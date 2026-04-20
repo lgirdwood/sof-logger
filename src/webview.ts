@@ -1426,6 +1426,302 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
             rDiv.appendChild(mapScroll);
             container.appendChild(rDiv);
           });
+        // --------------------------------------------------------------------------------
+        // Virtual Memory Map (Dynamically Mapped Aliases Only)
+        // --------------------------------------------------------------------------------
+        
+        const vDiv = document.createElement('div');
+        vDiv.className = 'memory-region';
+        const vTitle = document.createElement('h3');
+        vTitle.textContent = 'Virtual Memory Map (Dynamically Mapped Aliases)';
+        vDiv.appendChild(vTitle);
+        
+        const mapScrollV = document.createElement('div');
+        mapScrollV.className = 'map-scrollable';
+        const mapInnerV = document.createElement('div');
+        mapInnerV.className = 'map-inner';
+        const vBlocksDiv = document.createElement('div');
+        vBlocksDiv.className = 'memory-blocks';
+        vBlocksDiv.style.display = 'block';
+        
+        const mappedVBanks = new Set();
+        for (let i = 0; i < tlbRanges.length; i++) {
+            const tr = tlbRanges[i];
+            if (tr.attr && tr.attr.vaddr !== undefined) {
+                // Identity mappings (P == V) cover huge 2GB+ areas. Filter them out tightly
+                if (tr.attr.vaddr === 0) continue; 
+                
+                // Add bounding constraints structurally stopping DOM freeze
+                if (mappedVBanks.size > 150) break; 
+                
+                // Iterate exclusively in bank-sized striding natively
+                const startBank = ((tr.start + tr.attr.vaddr) >>> 0) - (((tr.start + tr.attr.vaddr) >>> 0) % 262144);
+                const endBank = ((tr.end - 1 + tr.attr.vaddr) >>> 0) - (((tr.end - 1 + tr.attr.vaddr) >>> 0) % 262144);
+                
+                for (let b = startBank; b <= endBank; b += 262144) {
+                    mappedVBanks.add(b >>> 0);
+                    if (mappedVBanks.size > 150) break;
+                }
+            }
+        }
+        
+        const vBanksSorted = Array.from(mappedVBanks).sort((a, b) => a - b);
+        
+        vBanksSorted.forEach(bankBase => {
+          const bankSize = 262144;
+          const bankLimit = bankBase + bankSize;
+          
+          const bDiv = document.createElement('div');
+          bDiv.className = 'memory-bank bank-row';
+          bDiv.style.position = 'relative';
+          bDiv.style.height = '35px';
+          bDiv.style.marginBottom = '6px';
+          bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
+          bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
+          bDiv.title = 'Virtual Bank (0x' + bankBase.toString(16).toUpperCase() + ')';
+          bDiv.dataset.base = bankBase.toString();
+          bDiv.dataset.size = bankSize.toString();
+          
+          const startLabel = document.createElement('span');
+          startLabel.className = 'start-label';
+          startLabel.textContent = '0x' + bankBase.toString(16).toUpperCase();
+          startLabel.style.position = 'absolute';
+          startLabel.style.left = '2px';
+          startLabel.style.top = '2px';
+          startLabel.style.fontSize = '10px';
+          startLabel.style.color = '#fff';
+          startLabel.style.background = 'rgba(0,0,0,0.6)';
+          startLabel.style.padding = '0 3px';
+          startLabel.style.zIndex = '5';
+          
+          const endLabel = document.createElement('span');
+          endLabel.className = 'end-label';
+          endLabel.textContent = '0x' + (bankLimit - 1).toString(16).toUpperCase();
+          endLabel.style.position = 'absolute';
+          endLabel.style.left = '100px'; 
+          endLabel.style.top = '2px';
+          endLabel.style.fontSize = '10px';
+          endLabel.style.color = '#fff';
+          endLabel.style.background = 'rgba(0,0,0,0.6)';
+          endLabel.style.padding = '0 3px';
+          endLabel.style.zIndex = '5';
+          
+          bDiv.appendChild(startLabel);
+          bDiv.appendChild(endLabel);
+          
+          for (let offset = 4096; offset < bankSize; offset += 4096) {
+               const label = document.createElement('span');
+               label.textContent = '0x' + (bankBase + offset).toString(16).toUpperCase();
+               label.style.position = 'absolute';
+               label.style.left = ((offset / bankSize) * 100) + '%';
+               label.style.top = '2px';
+               label.style.fontSize = '9px';
+               label.style.color = 'rgba(255,255,255,0.7)';
+               label.style.background = 'rgba(0,0,0,0.5)';
+               label.style.padding = '0 2px';
+               label.style.zIndex = '4';
+               label.style.transform = 'translate(-50%, 0)';
+               label.style.pointerEvents = 'none';
+               label.className = 'addr-marker';
+               
+               if (offset % 65536 === 0) label.dataset.z = '2.0';
+               else if (offset % 32768 === 0) label.dataset.z = '5.0';
+               else if (offset % 16384 === 0) label.dataset.z = '12.0';
+               else if (offset % 8192 === 0) label.dataset.z = '25.0';
+               else label.dataset.z = '50.0';
+               
+               label.style.display = (mapZoom >= parseFloat(label.dataset.z)) ? 'block' : 'none';
+               bDiv.appendChild(label);
+          }
+          
+          const pagePct = (4096 / bankSize) * 100;
+          bDiv.style.backgroundImage = 'linear-gradient(to right, transparent calc(100% - 1px), var(--vscode-editorGroup-border) 100%)';
+          bDiv.style.backgroundSize = pagePct + '% 100%';
+          
+          if (symbolsData) {
+              const insideBank = [];
+              symbolsData.forEach(sym => {
+                   const symPEnd = sym.addr + sym.size;
+                   
+                   for (let i = 0; i < tlbRanges.length; i++) {
+                       const tr = tlbRanges[i];
+                       if (tr.attr && tr.attr.vaddr !== undefined && tr.attr.vaddr !== 0) {
+                           const overlapStart = Math.max(sym.addr, tr.start);
+                           const overlapEnd = Math.min(symPEnd, tr.end);
+                           
+                           if (overlapStart < overlapEnd) {
+                               const extDelta = tr.attr.vaddr;
+                               const vStart = (overlapStart + extDelta) >>> 0;
+                               const vEnd = (overlapEnd + extDelta) >>> 0;
+                               
+                               if (vStart < bankLimit && vEnd > bankBase) {
+                                   const clippedSize = vEnd - vStart;
+                                   insideBank.push(Object.assign({}, sym, { addr: vStart, size: clippedSize }));
+                               }
+                           }
+                       }
+                   }
+              });
+              
+              const dedupedInside = [];
+              const seenVirtualBounds = new Set();
+              insideBank.forEach(b => {
+                 const key = b.addr + '-' + b.size + '-' + b.name;
+                 if (!seenVirtualBounds.has(key)) {
+                     seenVirtualBounds.add(key);
+                     dedupedInside.push(b);
+                 }
+              });
+              
+              dedupedInside.forEach(sym => {
+                  const sb = createMemBlock(sym, bankBase, bankSize);
+                  bDiv.appendChild(sb);
+              });
+          }
+          
+          const ringRow = document.createElement('div');
+          const asidRow = document.createElement('div');
+          const attrRow = document.createElement('div');
+          const paddrRow = document.createElement('div');
+          
+          const rowStyle = 'display: flex; width: 100%; height: 12px; margin-bottom: 1px;';
+          ringRow.style.cssText = rowStyle;
+          asidRow.style.cssText = rowStyle;
+          attrRow.style.cssText = rowStyle;
+          paddrRow.style.cssText = rowStyle + 'margin-bottom: 6px;';
+          
+          for (let offset = 0; offset < bankSize; offset += 4096) {
+              const vPg = (bankBase + offset) >>> 0;
+              
+              let extRing = null;
+              let extAsid = null;
+              let extAttr = null;
+              let extPaddrDelta = null;
+              let pPg = null;
+              
+              for (let i = tlbRanges.length - 1; i >= 0; i--) {
+                  if (tlbRanges[i].attr && tlbRanges[i].attr.vaddr !== undefined) {
+                      const vS = (tlbRanges[i].start + tlbRanges[i].attr.vaddr) >>> 0;
+                      const vE = (tlbRanges[i].end + tlbRanges[i].attr.vaddr) >>> 0;
+                      if (vPg >= vS && vPg < vE) {
+                          if (extRing === null && tlbRanges[i].attr.ring !== undefined) extRing = tlbRanges[i].attr.ring;
+                          if (extAsid === null && tlbRanges[i].attr.asid !== undefined) extAsid = tlbRanges[i].attr.asid;
+                          if (extAttr === null && tlbRanges[i].attr.attr !== undefined) extAttr = tlbRanges[i].attr.attr;
+                          if (extPaddrDelta === null) {
+                              extPaddrDelta = -tlbRanges[i].attr.vaddr;
+                              pPg = (vPg + extPaddrDelta) >>> 0;
+                          }
+                          if (extRing !== null && extAsid !== null && extAttr !== null && extPaddrDelta !== null) break;
+                      }
+                  }
+              }
+              
+              const rDiv = document.createElement('div');
+              const aDiv = document.createElement('div');
+              const atDiv = document.createElement('div');
+              const pDiv = document.createElement('div');
+              
+              const cellStyle = 'flex: 1; min-width: 0; border: 1px solid var(--vscode-editorGroup-border); box-sizing: border-box; font-size: 8px; text-align: center; overflow: hidden; display: flex; align-items: center; justify-content: center;';
+              rDiv.style.cssText = cellStyle;
+              aDiv.style.cssText = cellStyle;
+              atDiv.style.cssText = cellStyle;
+              pDiv.style.cssText = cellStyle;
+              
+              if (extRing === null) {
+                  rDiv.style.borderColor = 'transparent';
+                  aDiv.style.borderColor = 'transparent';
+                  atDiv.style.borderColor = 'transparent';
+                  pDiv.style.borderColor = 'transparent';
+              } else {
+                  const r = extRing;
+                  const asidNode = extAsid === '0xff' ? 'FF' : extAsid.replace('0x', '');
+                  const attrHex = extAttr.replace('0x', '').toUpperCase();
+                  
+                  const attrTitles = {
+                      '0': 'Illegal / Unmapped (Triggers exception)',
+                      '1': 'Write-Through, Kernel (R/W)',
+                      '2': 'Write-Through, Kernel (R/W/X)',
+                      '3': 'Cache Bypass, Full R/W/X for ALL Rings (Power-On)',
+                      '4': 'Write-Back, Kernel (R/W)',
+                      '5': 'Write-Back, Kernel (R/W/X)',
+                      '6': 'Write-Back, Userspace (R/W)',
+                      '7': 'Write-Back, Userspace (R/W/X)',
+                      '8': 'Write-Through, Userspace (R/W)',
+                      '9': 'Write-Through, Userspace (R/W/X)',
+                      'A': 'UG / Cacheable KRW',
+                      'B': 'UG / Cacheable KRWX',
+                      'C': 'UG / Cacheable URW',
+                      'D': 'Cache Bypass, Userspace (R/W/X)',
+                      'E': 'Platform Specific / Isolated RAM',
+                      'F': 'Cache Bypass, Kernel R/W/X (MMIO / Dev Regs)'
+                  };
+                  
+                  rDiv.textContent = 'R:' + r;
+                  aDiv.textContent = 'A:' + asidNode;
+                  atDiv.textContent = attrHex;
+                  
+                  const attrDesc = attrTitles[attrHex] ? ' (' + attrTitles[attrHex] + ')' : '';
+                  const titleStr = 'Page (V): 0x' + vPg.toString(16).toUpperCase() + '\\nPage (P): ' + (extPaddrDelta !== 0 ? '0x' + pPg.toString(16).toUpperCase() : 'P==V') + '\\nASID: ' + extAsid + '\\nAttr: ' + extAttr + attrDesc + '\\nRing: ' + r;
+                  rDiv.title = titleStr;
+                  aDiv.title = titleStr;
+                  atDiv.title = titleStr;
+                  pDiv.title = titleStr;
+                  
+                  const defBg = 'rgba(56, 142, 60, 0.3)';
+                  let rBg = defBg;
+                  if (r === '1') rBg = 'rgba(211, 47, 47, 0.5)';
+                  else if (r === '2') rBg = 'rgba(156, 39, 176, 0.5)';
+                  else if (r === '3') rBg = 'rgba(103, 58, 183, 0.5)';
+                  
+                  let aBg = defBg;
+                  if (asidNode !== '0' && asidNode !== '0x0' && asidNode !== 'FF') {
+                      const idVal = parseInt(asidNode, 16) || 0;
+                      aBg = 'hsla(' + ((idVal * 137.5) % 360) + ', 70%, 40%, 0.5)';
+                  }
+                  
+                  let atBg = defBg;
+                  if (attrHex === '0') atBg = 'rgba(156, 39, 176, 0.5)';
+                  else if (['6', '7', '8', '9', 'C', 'D'].includes(attrHex)) atBg = 'rgba(211, 47, 47, 0.5)';
+                  
+                  let pBg = defBg;
+                  if (extPaddrDelta === 0) {
+                      pDiv.textContent = 'P==V';
+                  } else {
+                      let hexCut = pPg.toString(16).toUpperCase();
+                      pDiv.textContent = hexCut;
+                      pBg = 'rgba(33, 150, 243, 0.5)'; // Blue alias
+                  }
+                  
+                  rDiv.style.backgroundColor = rBg;
+                  aDiv.style.backgroundColor = aBg;
+                  atDiv.style.backgroundColor = atBg;
+                  pDiv.style.backgroundColor = pBg;
+                  
+                  rDiv.style.color = '#fff';
+                  aDiv.style.color = '#fff';
+                  atDiv.style.color = '#fff';
+                  pDiv.style.color = '#fff';
+              }
+              
+              ringRow.appendChild(rDiv);
+              asidRow.appendChild(aDiv);
+              attrRow.appendChild(atDiv);
+              paddrRow.appendChild(pDiv);
+          }
+          vBlocksDiv.appendChild(bDiv);
+          vBlocksDiv.appendChild(ringRow);
+          vBlocksDiv.appendChild(asidRow);
+          vBlocksDiv.appendChild(attrRow);
+          vBlocksDiv.appendChild(paddrRow);
+        });
+        
+        mapInnerV.appendChild(vBlocksDiv);
+        mapScrollV.appendChild(mapInnerV);
+        vDiv.appendChild(mapScrollV);
+        if (container) {
+           container.appendChild(vDiv);
+        }
+        
         }
         
         // Truncate evaluation logic below 'vmh_alloc' because internal parameters duplicate pointer shifts corrupting boundaries.
