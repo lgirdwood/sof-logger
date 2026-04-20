@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { parseLogFile, MemoryRegion } from './parser';
+import { parseLogFile, MemoryRegion, SramTopology } from './parser';
 import { getWebviewContent } from './webview';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -13,7 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel, memoryRegions: MemoryRegion[] = []) {
+    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel, memoryRegions: MemoryRegion[] = [], sramTopologies: SramTopology[] = []) {
       return vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "Loading ELF Symbols (-l formatting)...",
@@ -100,7 +100,7 @@ export function activate(context: vscode.ExtensionContext) {
               }
             }
             
-            panel.webview.html = getWebviewContent(logData, symbols, memoryRegions);
+            panel.webview.html = getWebviewContent(logData, symbols, memoryRegions, sramTopologies);
             vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
             resolve();
           });
@@ -123,7 +123,7 @@ export function activate(context: vscode.ExtensionContext) {
         }
       );
 
-      panel.webview.html = getWebviewContent(logData, [], parseResult.memoryRegions);
+      panel.webview.html = getWebviewContent(logData, [], parseResult.memoryRegions, parseResult.sramTopologies);
 
       let targetElfPath = parseResult.elfPath;
       if (targetElfPath && targetElfPath.endsWith('.ri')) {
@@ -136,7 +136,7 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
       } else {
         // Fire and forget without blocking!
-        resolveElfSymbols(targetElfPath, logData, panel, parseResult.memoryRegions);
+        resolveElfSymbols(targetElfPath, logData, panel, parseResult.memoryRegions, parseResult.sramTopologies);
       }
 
       panel.webview.onDidReceiveMessage(async message => {

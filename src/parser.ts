@@ -33,10 +33,17 @@ export interface MemoryRegion {
   end: number;
 }
 
+export interface SramTopology {
+  name: string;
+  banks: number;
+  bankSize: number;
+}
+
 export interface ParseResult {
   dataPoints: LogDataPoint[];
   elfPath: string | null;
   memoryRegions?: MemoryRegion[];
+  sramTopologies?: SramTopology[];
 }
 
 export async function parseLogFile(filePath: string): Promise<ParseResult> {
@@ -68,10 +75,13 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
   const firmwareRegex = /Loading\s+DSP\s+Firmware:\s+(.+)/i;
   // Memory Region Extraction
   const regionRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s*:\s*(0x[0-9a-fA-F]+)\s*-\s*(0x[0-9a-fA-F]+)/i;
+  // SRAM Topologies Extraction
+  const sramTopologyRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s*:\s*(\d+)\s+banks of (0x[0-9a-fA-F]+)\s+bytes/i;
   // Coherent Alias Extraction
   const aliasRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s+non-coherent:\s+\d+\s+core\s+shadows\s+@\s+(0x[0-9a-fA-F]+),\s+coherent\s+alias\s+@\s+(0x[0-9a-fA-F]+)\s+\(size\s+(0x[0-9a-fA-F]+)\)/i;
 
   let parsedRegions: MemoryRegion[] = [];
+  let parsedSramTopologies: SramTopology[] = [];
 
   let currentElfPath: string | null = null;
   let currentUM: number | null = null;
@@ -163,6 +173,15 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
             end: parseInt(regionMatch[3], 16)
          });
       }
+      
+      const sramMatch = line.match(sramTopologyRegex);
+      if (sramMatch) {
+         parsedSramTopologies.push({
+            name: sramMatch[1].trim(),
+            banks: parseInt(sramMatch[2], 10),
+            bankSize: parseInt(sramMatch[3], 16)
+         });
+      }
 
       const aliasMatch = line.match(aliasRegex);
       if (aliasMatch) {
@@ -236,5 +255,5 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     }
   }
 
-  return { dataPoints, elfPath: currentElfPath, memoryRegions: parsedRegions };
+  return { dataPoints, elfPath: currentElfPath, memoryRegions: parsedRegions, sramTopologies: parsedSramTopologies };
 }

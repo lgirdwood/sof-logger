@@ -1,6 +1,6 @@
-import { LogDataPoint, MemoryRegion } from './parser';
+import { LogDataPoint, MemoryRegion, SramTopology } from './parser';
 
-export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], regionsMeta: MemoryRegion[] = []): string {
+export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], regionsMeta: MemoryRegion[] = [], sramTopologies: SramTopology[] = []): string {
   const timeFactor = 38420000.0;
   
   const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
@@ -1163,7 +1163,14 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                }
             }
 
-            const bankSize = 262144; // 256KB Explicit Hardware Bank Array Constraints
+            let bankSize = 262144; // 256KB explicit hardware fallback
+            const sramTops = ${JSON.stringify(sramTopologies)};
+            if (sramTops && sramTops.length > 0) {
+               const st = sramTops.find(s => rName.toLowerCase().includes(s.name.toLowerCase()));
+               if (st && st.bankSize) {
+                  bankSize = st.bankSize;
+               }
+            }
             minAddr = Math.floor(minAddr / bankSize) * bankSize; // Protect against JS 32-bit signed bitwise limits safely
             const bankCount = Math.ceil((maxAddr - minAddr) / bankSize) || 1;
             
