@@ -1341,11 +1341,25 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   atDiv.title = titleStr;
                   
                   const defBg = 'rgba(56, 142, 60, 0.3)';
-                  const diffBg = 'rgba(211, 47, 47, 0.4)';
                   
-                  rDiv.style.backgroundColor = (r === '0') ? defBg : diffBg;
-                  aDiv.style.backgroundColor = (asidNode === '0') ? defBg : diffBg;
-                  atDiv.style.backgroundColor = (attrHex === '0') ? defBg : diffBg;
+                  let rBg = defBg;
+                  if (r === '1') rBg = 'rgba(211, 47, 47, 0.5)';
+                  else if (r === '2') rBg = 'rgba(156, 39, 176, 0.5)';
+                  else if (r === '3') rBg = 'rgba(103, 58, 183, 0.5)';
+                  
+                  let aBg = defBg;
+                  if (asidNode !== '0' && asidNode !== '0x0' && asidNode !== 'FF') {
+                      const idVal = parseInt(asidNode, 16) || 0;
+                      aBg = 'hsla(' + ((idVal * 137.5) % 360) + ', 70%, 40%, 0.5)';
+                  }
+                  
+                  let atBg = defBg;
+                  if (attrHex === '0') atBg = 'rgba(156, 39, 176, 0.5)';
+                  else if (['6', '7', '8', '9', 'C', 'D'].includes(attrHex)) atBg = 'rgba(211, 47, 47, 0.5)';
+                  
+                  rDiv.style.backgroundColor = rBg;
+                  aDiv.style.backgroundColor = aBg;
+                  atDiv.style.backgroundColor = atBg;
                   
                   rDiv.style.color = '#fff';
                   aDiv.style.color = '#fff';
