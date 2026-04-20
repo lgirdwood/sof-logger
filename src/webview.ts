@@ -1283,7 +1283,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   const aDiv = document.createElement('div');
                   const atDiv = document.createElement('div');
                   
-                  const cellStyle = 'flex: 1; border: 1px solid var(--vscode-editorGroup-border); box-sizing: border-box; font-size: 8px; text-align: center; overflow: hidden; display: flex; align-items: center; justify-content: center;';
+                  const cellStyle = 'flex: 1; min-width: 0; border: 1px solid var(--vscode-editorGroup-border); box-sizing: border-box; font-size: 8px; text-align: center; overflow: hidden; display: flex; align-items: center; justify-content: center;';
                   
                   rDiv.style.cssText = cellStyle;
                   aDiv.style.cssText = cellStyle;
