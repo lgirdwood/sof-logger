@@ -871,11 +871,24 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           let lastTlbPaddr = null;
           logData.forEach((d) => {
              if (d.tlbDetails) {
-                 const mtch = d.tlbDetails.match(/paddr=(0x[0-9a-f]+)\\s+asid=(0x[0-9a-f]+)\\s+attr=(0x[0-9a-f]+)(?:\\s+ring=(\\d))?/i);
-                 if (mtch) {
-                     lastTlbPaddr = parseInt(mtch[1], 16);
-                     lastTlbAttrObj = { asid: mtch[2], attr: mtch[3], ring: mtch[4] };
+                 let vaddrMtch = d.tlbDetails.match(/vaddr=(0x[0-9a-f]+)/i);
+                 let paddrMtch = d.tlbDetails.match(/paddr=(0x[0-9a-f]+)/i);
+                 let asidMtch = d.tlbDetails.match(/asid=(0x[0-9a-f]+)/i);
+                 let attrMtch = d.tlbDetails.match(/attr=(0x[0-9a-f]+)/i);
+                 let ringMtch = d.tlbDetails.match(/ring=(\d)/i);
+                 
+                 if (paddrMtch) {
+                     lastTlbPaddr = parseInt(paddrMtch[1], 16);
                      const base4k = lastTlbPaddr - (lastTlbPaddr % 4096);
+                     const prior = pageAttributes[base4k] || { ring: '0', asid: '0x0', attr: '0x0', vaddr: 0 };
+                     
+                     lastTlbAttrObj = { 
+                        asid: asidMtch ? asidMtch[1] : prior.asid, 
+                        attr: attrMtch ? attrMtch[1] : prior.attr, 
+                        ring: ringMtch ? ringMtch[1] : prior.ring,
+                        vaddr: (vaddrMtch && paddrMtch) ? (parseInt(vaddrMtch[1], 16) - parseInt(paddrMtch[1], 16)) : prior.vaddr
+                     };
+                     
                      pageAttributes[base4k] = lastTlbAttrObj;
                  }
                  
@@ -1257,11 +1270,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               const ringRow = document.createElement('div');
               const asidRow = document.createElement('div');
               const attrRow = document.createElement('div');
+              const vaddrRow = document.createElement('div');
               
               const rowStyle = 'display: flex; width: 100%; height: 12px; margin-bottom: 1px;';
               ringRow.style.cssText = rowStyle;
               asidRow.style.cssText = rowStyle;
-              attrRow.style.cssText = rowStyle + 'margin-bottom: 6px;';
+              attrRow.style.cssText = rowStyle;
+              vaddrRow.style.cssText = rowStyle + 'margin-bottom: 6px;';
               
               for (let offset = 0; offset < bankSize; offset += 4096) {
                   const pg = bankBase + offset;
@@ -1269,32 +1284,37 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   let extRing = null;
                   let extAsid = null;
                   let extAttr = null;
+                  let extDelta = null;
                   
                   for (let i = tlbRanges.length - 1; i >= 0; i--) {
                       if (pg >= tlbRanges[i].start && pg < tlbRanges[i].end) {
                           if (extRing === null && tlbRanges[i].attr.ring !== undefined) extRing = tlbRanges[i].attr.ring;
                           if (extAsid === null && tlbRanges[i].attr.asid !== undefined) extAsid = tlbRanges[i].attr.asid;
                           if (extAttr === null && tlbRanges[i].attr.attr !== undefined) extAttr = tlbRanges[i].attr.attr;
-                          if (extRing !== null && extAsid !== null && extAttr !== null) break;
+                          if (extDelta === null && tlbRanges[i].attr.vaddr !== undefined) extDelta = tlbRanges[i].attr.vaddr;
+                          if (extRing !== null && extAsid !== null && extAttr !== null && extDelta !== null) break;
                       }
                   }
                   
-                  const rootPg = pageAttributes[pg] || { ring: '0', asid: '0x0', attr: '0x0' };
+                  const rootPg = pageAttributes[pg] || { ring: '0', asid: '0x0', attr: '0x0', vaddr: 0 };
                   if (extRing === null) extRing = rootPg.ring !== undefined ? rootPg.ring : '0';
                   if (extAsid === null) extAsid = rootPg.asid !== undefined ? rootPg.asid : '0x0';
                   if (extAttr === null) extAttr = rootPg.attr !== undefined ? rootPg.attr : '0x0';
+                  if (extDelta === null) extDelta = rootPg.vaddr !== undefined ? rootPg.vaddr : 0;
                   
-                  const pgAttr = { ring: extRing, asid: extAsid, attr: extAttr };
+                  const pgAttr = { ring: extRing, asid: extAsid, attr: extAttr, vaddr: extDelta };
                   
                   const rDiv = document.createElement('div');
                   const aDiv = document.createElement('div');
                   const atDiv = document.createElement('div');
+                  const vDiv = document.createElement('div');
                   
                   const cellStyle = 'flex: 1; min-width: 0; border: 1px solid var(--vscode-editorGroup-border); box-sizing: border-box; font-size: 8px; text-align: center; overflow: hidden; display: flex; align-items: center; justify-content: center;';
                   
                   rDiv.style.cssText = cellStyle;
                   aDiv.style.cssText = cellStyle;
                   atDiv.style.cssText = cellStyle;
+                  vDiv.style.cssText = cellStyle;
                   
                   const r = pgAttr.ring || '?';
                   const asidNode = pgAttr.asid === '0xff' ? 'FF' : pgAttr.asid.replace('0x', '');
@@ -1341,11 +1361,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   aDiv.textContent = 'A:' + asidNode;
                   atDiv.textContent = attrAbbrev[attrHex] || attrHex;
                   
+                  const vrt = (pg + pgAttr.vaddr) >>> 0;
                   const attrDesc = attrTitles[attrHex] ? ' (' + attrTitles[attrHex] + ')' : '';
-                  const titleStr = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\\nRing: ' + r : '');
+                  const titleStr = 'Page (P): 0x' + pg.toString(16).toUpperCase() + '\\nPage (V): ' + (pgAttr.vaddr !== 0 ? '0x' + vrt.toString(16).toUpperCase() : 'P==V') + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\\nRing: ' + r : '');
                   rDiv.title = titleStr;
                   aDiv.title = titleStr;
                   atDiv.title = titleStr;
+                  vDiv.title = titleStr;
                   
                   const defBg = 'rgba(56, 142, 60, 0.3)';
                   
@@ -1364,21 +1386,34 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   if (attrHex === '0') atBg = 'rgba(156, 39, 176, 0.5)';
                   else if (['6', '7', '8', '9', 'C', 'D'].includes(attrHex)) atBg = 'rgba(211, 47, 47, 0.5)';
                   
+                  let vBg = defBg;
+                  if (pgAttr.vaddr === 0) {
+                      vDiv.textContent = 'P==V';
+                  } else {
+                      let hexCut = vrt.toString(16).toUpperCase();
+                      vDiv.textContent = hexCut;
+                      vBg = 'rgba(33, 150, 243, 0.5)'; // Blue alias
+                  }
+                  
                   rDiv.style.backgroundColor = rBg;
                   aDiv.style.backgroundColor = aBg;
                   atDiv.style.backgroundColor = atBg;
+                  vDiv.style.backgroundColor = vBg;
                   
                   rDiv.style.color = '#fff';
                   aDiv.style.color = '#fff';
                   atDiv.style.color = '#fff';
+                  vDiv.style.color = '#fff';
                   
                   ringRow.appendChild(rDiv);
                   asidRow.appendChild(aDiv);
                   attrRow.appendChild(atDiv);
+                  vaddrRow.appendChild(vDiv);
               }
               blocksDiv.appendChild(ringRow);
               blocksDiv.appendChild(asidRow);
               blocksDiv.appendChild(attrRow);
+              blocksDiv.appendChild(vaddrRow);
             }
             
             const mapScroll = document.createElement('div');
