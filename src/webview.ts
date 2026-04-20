@@ -699,6 +699,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           let dxGlobal = 0;
           let scrollLeftStarts = [];
           let scrollTopStart = 0;
+          let pendingZoomAnchor = null;
           const layoutContainer = document.getElementById('memoryMapLayout');
 
           function commitRedraw() {
@@ -720,8 +721,15 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  marker.style.display = (mapZoom >= parseFloat(marker.dataset.z)) ? 'block' : 'none';
               });
               
-              // Restore scroll states synchronously
-              if (scrollLeftStarts.length > 0) {
+              if (pendingZoomAnchor) {
+                  const scrolls = container.querySelectorAll('.map-scrollable');
+                  if (scrolls.length > 0) {
+                      const newWidth = scrolls[0].scrollWidth;
+                      const newLeft = (newWidth * pendingZoomAnchor.ratio) - pendingZoomAnchor.pX;
+                      scrolls.forEach(s => { s.scrollLeft = newLeft; });
+                  }
+                  pendingZoomAnchor = null;
+              } else if (scrollLeftStarts.length > 0) {
                  const newLeft = scrollLeftStarts[0].startLeft - dxGlobal;
                  scrollLeftStarts.forEach(obj => { obj.el.scrollLeft = newLeft; });
               }
@@ -742,12 +750,25 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               mapZoom = Math.max(0.1, Math.min(2000.0, mapZoom + delta));
               
               const scale = mapZoom / baseZoom;
-              document.querySelectorAll('.map-inner').forEach(inner => {
-                  // @ts-ignore
-                  inner.style.transformOrigin = e.offsetX + 'px center';
-                  // @ts-ignore
-                  inner.style.transform = 'scaleX(' + scale + ')';
-              });
+              
+              if (!pendingZoomAnchor) {
+                  const scrolls = container.querySelectorAll('.map-scrollable');
+                  if (scrolls.length > 0) {
+                      const rect = scrolls[0].getBoundingClientRect();
+                      const pX = e.clientX - rect.left;
+                      const absX = scrolls[0].scrollLeft + pX;
+                      pendingZoomAnchor = { ratio: absX / scrolls[0].scrollWidth, pX: pX, absX: absX };
+                  }
+              }
+
+              if (pendingZoomAnchor) {
+                  document.querySelectorAll('.map-inner').forEach(inner => {
+                      // @ts-ignore
+                      inner.style.transformOrigin = pendingZoomAnchor.absX + 'px center';
+                      // @ts-ignore
+                      inner.style.transform = 'scaleX(' + scale + ')';
+                  });
+              }
               
               clearTimeout(redrawTimeout);
               redrawTimeout = setTimeout(() => { commitRedraw(); }, 200);
@@ -772,7 +793,6 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
              e.preventDefault();
              dxGlobal = e.pageX - startX;
              const dy = e.pageY - startY;
-             
              document.querySelectorAll('.map-inner').forEach(inner => {
                  // scaleX applies visual modifications without recomputing layouts!
                  // @ts-ignore
@@ -780,9 +800,6 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
              });
              
              if (layoutContainer) layoutContainer.scrollTop = scrollTopStart - dy;
-             
-             clearTimeout(redrawTimeout);
-             redrawTimeout = setTimeout(() => { commitRedraw(); }, 150);
           });
 
           window.addEventListener('mouseup', () => {
@@ -1216,41 +1233,62 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               });
               blocksDiv.appendChild(bDiv);
               
+              const ringRow = document.createElement('div');
+              const asidRow = document.createElement('div');
               const attrRow = document.createElement('div');
-              attrRow.style.display = 'flex';
-              attrRow.style.width = '100%';
-              attrRow.style.height = '14px';
-              attrRow.style.marginBottom = '6px';
+              
+              const rowStyle = 'display: flex; width: 100%; height: 12px; margin-bottom: 1px;';
+              ringRow.style.cssText = rowStyle;
+              asidRow.style.cssText = rowStyle;
+              attrRow.style.cssText = rowStyle + 'margin-bottom: 6px;';
               
               for (let offset = 0; offset < bankSize; offset += 4096) {
                   const pg = bankBase + offset;
                   const pgAttr = pageAttributes[pg];
                   
-                  const pDiv = document.createElement('div');
-                  pDiv.style.flex = '1';
-                  pDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
-                  pDiv.style.boxSizing = 'border-box';
-                  pDiv.style.fontSize = '8px';
-                  pDiv.style.textAlign = 'center';
-                  pDiv.style.overflow = 'hidden';
-                  pDiv.style.display = 'flex';
-                  pDiv.style.flexDirection = 'column';
-                  pDiv.style.justifyContent = 'center';
+                  const rDiv = document.createElement('div');
+                  const aDiv = document.createElement('div');
+                  const atDiv = document.createElement('div');
+                  
+                  const cellStyle = 'flex: 1; border: 1px solid var(--vscode-editorGroup-border); box-sizing: border-box; font-size: 8px; text-align: center; overflow: hidden; display: flex; align-items: center; justify-content: center;';
+                  
+                  rDiv.style.cssText = cellStyle;
+                  aDiv.style.cssText = cellStyle;
+                  atDiv.style.cssText = cellStyle;
                   
                   if (pgAttr) {
                       const r = pgAttr.ring || '?';
                       const asidNode = pgAttr.asid === '0xff' ? 'FF' : pgAttr.asid.replace('0x', '');
-                      pDiv.innerHTML = '<div style="line-height:6px;">' + asidNode + '</div><div style="line-height:6px;font-size:7px;color:#eee;">' + r + '</div>';
-                      pDiv.title = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + (r !== '?' ? '\\nRing: ' + r : '');
-                      if (r === '0' || r === '2') pDiv.style.backgroundColor = 'rgba(211, 47, 47, 0.3)';
-                      else if (r === '?') pDiv.style.backgroundColor = 'rgba(25, 118, 210, 0.3)';
-                      else pDiv.style.backgroundColor = 'rgba(56, 142, 60, 0.3)';
-                      pDiv.style.color = '#fff';
-                  } else {
-                      pDiv.style.backgroundColor = 'transparent';
+                      const attrStr = pgAttr.attr.replace('0x', '');
+                      
+                      rDiv.textContent = 'R:' + r;
+                      aDiv.textContent = 'A:' + asidNode;
+                      atDiv.textContent = 'M:' + attrStr;
+                      
+                      const titleStr = 'Page: 0x' + pg.toString(16).toUpperCase() + '\\nASID: ' + pgAttr.asid + '\\nAttr: ' + pgAttr.attr + (r !== '?' ? '\\nRing: ' + r : '');
+                      rDiv.title = titleStr;
+                      aDiv.title = titleStr;
+                      atDiv.title = titleStr;
+                      
+                      let bg = 'transparent';
+                      if (r === '0' || r === '2') bg = 'rgba(211, 47, 47, 0.4)';
+                      else if (r === '?') bg = 'rgba(25, 118, 210, 0.3)';
+                      else bg = 'rgba(56, 142, 60, 0.3)';
+                      
+                      rDiv.style.backgroundColor = bg;
+                      aDiv.style.backgroundColor = bg;
+                      atDiv.style.backgroundColor = bg;
+                      rDiv.style.color = '#fff';
+                      aDiv.style.color = '#fff';
+                      atDiv.style.color = '#fff';
                   }
-                  attrRow.appendChild(pDiv);
+                  
+                  ringRow.appendChild(rDiv);
+                  asidRow.appendChild(aDiv);
+                  attrRow.appendChild(atDiv);
               }
+              blocksDiv.appendChild(ringRow);
+              blocksDiv.appendChild(asidRow);
               blocksDiv.appendChild(attrRow);
             }
             
