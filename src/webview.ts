@@ -42,11 +42,11 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         button:hover { background: var(--vscode-button-hoverBackground); }
         .main-layout { display: flex; width: 100vw; height: 85vh; }
         .sidebar-wrapper { width: 30%; height: 100%; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); }
-        .sidebar { flex-grow: 1; overflow-y: auto; padding: 5px; box-sizing: border-box; }
+        .sidebar { flex-grow: 1; overflow-y: auto; overflow-x: auto; padding: 5px; box-sizing: border-box; }
         #treeSearch { width: 100%; box-sizing: border-box; margin-bottom: 5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px; }
         .chart-container { width: 70%; height: 100%; position: relative; }
         details { margin-left: 12px; }
-        summary { font-family: monospace; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 2px; user-select: none; }
+        summary { font-family: monospace; font-size: 11px; white-space: nowrap; padding: 2px; user-select: none; }
         summary:hover { background: var(--vscode-list-hoverBackground); }
         summary.selected { background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
         .memory-map-layout { display: none; padding: 10px; overflow-y: auto; height: 85vh; }
@@ -104,7 +104,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         <div style="display: flex; height: calc(100% - 40px); gap: 10px;">
           <div class="sidebar-wrapper" style="width: 25%; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); padding-right: 10px;">
              <h3 style="margin-top: 0; font-size: 14px;">Dynamic Allocations</h3>
-             <div class="sidebar" id="alloc-sidebar" style="flex-grow: 1; overflow-y: auto;"></div>
+             <div class="sidebar" id="alloc-sidebar" style="flex-grow: 1; overflow-y: auto; overflow-x: auto;"></div>
           </div>
           <div id="memory-map-container" style="flex-grow: 1; overflow-y: auto;"></div>
         </div>
@@ -870,6 +870,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                            const flags = guessAllocFlags(name, entryNode.args);
                             const ptr = parseInt(d.funcRet, 16);
                            if (size > 0 && ptr > 0) {
+                              const callerName = entryNode.stackChain && entryNode.stackChain.length > 0 ? entryNode.stackChain[entryNode.stackChain.length - 1] : name;
                               heapAllocs.push({
                                   name: name,
                                   stackChain: entryNode.stackChain,
@@ -878,8 +879,8 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                                   flags: flags,
                                   args: entryNode.args,
                                   sect: 'heap_dyn',
-                                  file: symbolsData.find(s => s.name === name)?.file || '',
-                                  line: symbolsData.find(s => s.name === name)?.line || 0
+                                  file: symbolsData.find(s => s.name === callerName)?.file || symbolsData.find(s => s.name === name)?.file || '',
+                                  line: symbolsData.find(s => s.name === callerName)?.line || symbolsData.find(s => s.name === name)?.line || 0
                               });
                            }
                        }
