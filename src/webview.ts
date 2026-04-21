@@ -557,13 +557,18 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
 
                   if (window.myChart) {
                     const start = p.t / 38420000.0;
-                    let end = start + (1000 / 38420000.0);
+                    let end = start;
                     if (details.dataset.endT) {
                       end = parseFloat(details.dataset.endT) / 38420000.0;
                     }
-                    const buffer = (end - start) * 0.1 || 0.000001;
-                    window.myChart.options.scales.x.min = start - buffer;
-                    window.myChart.options.scales.x.max = end + buffer;
+                    let duration = end - start;
+                    if (duration === 0) duration = 0.001; // Scale arbitrarily only for instantaneous execution bounds avoiding div-zero rendering crashes implicitly explicitly inherently!
+                    
+                    // The border events sequentially mirror precisely 0.5x the length of the selected function purely
+                    const padding = duration * 0.5; 
+                    
+                    window.myChart.options.scales.x.min = start - padding;
+                    window.myChart.options.scales.x.max = end + padding;
                     window.myChart.update();
                   }
                 };
