@@ -3,6 +3,11 @@
   "displayName": "SOF Logger",
   "description": "Visualizes QEMU Logs with PS bits and Cache Misses",
   "version": "0.0.1",
+  "publisher": "thesofproject",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thesofproject/sof"
+  },
   "engines": {
     "vscode": "^1.80.0"
   },
