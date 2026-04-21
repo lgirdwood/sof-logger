@@ -688,7 +688,20 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
             mainLayout.style.display = 'none';
             memLayout.style.display = 'block';
             if (legend) legend.style.display = 'flex';
-            renderMemoryMap();
+            
+            // @ts-ignore
+            if (!window.memoryMapRendered) {
+                const container = document.getElementById('memory-map-container');
+                if (container) {
+                    container.innerHTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%;"><div class="flash-target" style="padding: 20px; background: #333; color: white; border-radius: 8px; font-size: 16px;">Computing Topological Memory Intersections...</div></div>';
+                    setTimeout(() => {
+                        container.innerHTML = '';
+                        renderMemoryMap();
+                        // @ts-ignore
+                        window.memoryMapRendered = true;
+                    }, 50);
+                }
+            }
           }
         }
 
