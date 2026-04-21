@@ -1176,16 +1176,23 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                }
             }
 
-            let bankSize = 262144; // 256KB explicit hardware fallback
+            let bankSize = 131072; // 32 pages explicit hardware fallback
+            let explicitBankCount = null;
             const sramTops = ${JSON.stringify(sramTopologies)};
             if (sramTops && sramTops.length > 0) {
-               const st = sramTops.find(s => rName.toLowerCase().includes(s.name.toLowerCase()));
-               if (st && st.bankSize) {
-                  bankSize = st.bankSize;
+               const st = sramTops.find(s => rName.toLowerCase().replace(/-/g, '').includes(s.name.toLowerCase().replace(/-/g, '')));
+               if (st) {
+                  if (st.bankSize) bankSize = st.bankSize;
+                  if (st.banks) explicitBankCount = st.banks;
                }
             }
+            if (explicitBankCount === null) {
+                // unless size is smaller than 32 pages
+                bankSize = Math.min(bankSize, Math.max(4096, maxAddr - minAddr)); 
+            }
+            
             minAddr = Math.floor(minAddr / bankSize) * bankSize; // Protect against JS 32-bit signed bitwise limits safely
-            const bankCount = Math.ceil((maxAddr - minAddr) / bankSize) || 1;
+            const bankCount = explicitBankCount !== null ? explicitBankCount : (Math.ceil((maxAddr - minAddr) / bankSize) || 1);
             
             for (let idx = 0; idx < bankCount; idx++) {
               const bankBase = minAddr + (idx * bankSize);
@@ -1200,7 +1207,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
               bDiv.style.marginBottom = '6px';
               bDiv.style.backgroundColor = 'rgba(0,0,0,0.1)';
               bDiv.style.border = '1px solid var(--vscode-editorGroup-border)';
-              bDiv.title = rName + ' Row ' + idx + ' (0x' + bankBase.toString(16).toUpperCase() + ')';
+              bDiv.title = rName + ' Bank ' + idx + ' (0x' + bankBase.toString(16).toUpperCase() + ')';
               bDiv.className = 'bank-row';
               bDiv.dataset.base = bankBase.toString();
               bDiv.dataset.size = bankSize.toString();
@@ -1455,10 +1462,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                 if (mappedVBanks.size > 150) break; 
                 
                 // Iterate exclusively in bank-sized striding natively
-                const startBank = ((tr.start + tr.attr.vaddr) >>> 0) - (((tr.start + tr.attr.vaddr) >>> 0) % 262144);
-                const endBank = ((tr.end - 1 + tr.attr.vaddr) >>> 0) - (((tr.end - 1 + tr.attr.vaddr) >>> 0) % 262144);
+                const startBank = ((tr.start + tr.attr.vaddr) >>> 0) - (((tr.start + tr.attr.vaddr) >>> 0) % 131072);
+                const endBank = ((tr.end - 1 + tr.attr.vaddr) >>> 0) - (((tr.end - 1 + tr.attr.vaddr) >>> 0) % 131072);
                 
-                for (let b = startBank; b <= endBank; b += 262144) {
+                for (let b = startBank; b <= endBank; b += 131072) {
                     mappedVBanks.add(b >>> 0);
                     if (mappedVBanks.size > 150) break;
                 }
@@ -1468,7 +1475,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         const vBanksSorted = Array.from(mappedVBanks).sort((a, b) => a - b);
         
         vBanksSorted.forEach(bankBase => {
-          const bankSize = 262144;
+          const bankSize = 131072;
           const bankLimit = bankBase + bankSize;
           
           const bDiv = document.createElement('div');
