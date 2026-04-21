@@ -126,6 +126,13 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
       if (!currentTlbDetails) currentTlbDetails = tlbMatch[2];
       else currentTlbDetails += ' | ' + tlbMatch[2];
       changed = true;
+    } else {
+      const resetMmuMatch = line.match(/way=\d+\s+entry=\d+\s+(vaddr=.*)/i);
+      if (resetMmuMatch) {
+         if (!currentTlbType) currentTlbType = 'I';
+         currentTlbDetails = resetMmuMatch[1] + " page_size=0x20000000"; // Inherently map XTensa default 512MB block geometries gracefully natively!
+         changed = true;
+      }
     }
 
     // Parse Exception
