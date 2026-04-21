@@ -101,11 +101,12 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
       <div class="memory-map-layout" id="memoryMapLayout">
         <div style="display: flex; gap: 20px; align-items: baseline; margin-bottom: 10px;">
           <h2>Visual Memory Map</h2>
-          <input type="text" id="allocSearch" placeholder="Search allocations..." onkeydown="if(event.key === 'Enter') searchAllocs(this.value)" style="width: 300px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px;" />
+          <input type="text" id="allocSearch" placeholder="Search allocations..." onkeydown="if(event.key === 'Enter') searchAllocs(this.value)" style="width: 250px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px;" />
+          <input type="text" id="addressSearch" placeholder="Search Address (e.g. A01)" onkeydown="if(event.key === 'Enter') searchAllocAddress(this.value)" style="width: 250px; margin-left: 10px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px;" />
         </div>
         <div style="display: flex; height: calc(100% - 40px); gap: 10px;">
           <div class="sidebar-wrapper" style="width: 25%; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); padding-right: 10px;">
-             <h3 style="margin-top: 0; font-size: 14px;">Dynamic Allocations</h3>
+             <h3 style="margin-top: 0; font-size: 14px;">Allocations & Symbols</h3>
              <div class="sidebar" id="alloc-sidebar" style="flex-grow: 1; overflow-y: auto; overflow-x: auto;"></div>
           </div>
           <div id="memory-map-container" style="flex-grow: 1; overflow-y: auto;"></div>
@@ -657,14 +658,57 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
 
         function searchAllocs(query) {
            query = query.toLowerCase();
-           const sidebar = document.getElementById('alloc-sidebar');
-           if (!sidebar) return;
-           const children = sidebar.children;
-           for (let i = 0; i < children.length; i++) {
-              const text = children[i].textContent.toLowerCase();
-              if (text.includes(query)) children[i].style.display = 'block';
-              else children[i].style.display = 'none';
-           }
+           document.querySelectorAll('#alloc-sidebar .alloc-item').forEach(item => {
+              if (query === '') {
+                  // @ts-ignore
+                  item.style.display = 'block'; 
+                  return; 
+              }
+              const text = item.textContent.toLowerCase();
+              if (text.includes(query)) {
+                  // @ts-ignore
+                  item.style.display = 'block';
+                  let parent = item.parentElement;
+                  while (parent && parent.id !== 'alloc-sidebar') {
+                      if (parent.tagName.toLowerCase() === 'details') {
+                          // @ts-ignore
+                          parent.open = true;
+                      }
+                      parent = parent.parentElement;
+                  }
+              } else {
+                  // @ts-ignore
+                  item.style.display = 'none';
+              }
+           });
+        }
+
+        function searchAllocAddress(query) {
+           query = query.toLowerCase().replace('0x', '');
+           document.querySelectorAll('#alloc-sidebar .alloc-item').forEach(item => {
+              if (query === '') {
+                  // @ts-ignore
+                  item.style.display = 'block'; 
+                  return; 
+              }
+              // @ts-ignore
+              const addr = item.dataset.addr;
+              if (addr && addr.includes(query)) {
+                  // @ts-ignore
+                  item.style.display = 'block';
+                  let parent = item.parentElement;
+                  while (parent && parent.id !== 'alloc-sidebar') {
+                      if (parent.tagName.toLowerCase() === 'details') {
+                          // @ts-ignore
+                          parent.open = true;
+                      }
+                      parent = parent.parentElement;
+                  }
+              } else {
+                  // @ts-ignore
+                  item.style.display = 'none';
+              }
+           });
         }
 
         function resetZoom() {
@@ -1063,10 +1107,25 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           const allocSidebar = document.getElementById('alloc-sidebar');
           if (allocSidebar) {
              allocSidebar.innerHTML = '';
+             
+             // 1. Dynamic Heap Allocations Root
+             const dynDetails = document.createElement('details');
+             dynDetails.open = true;
+             const dynSummary = document.createElement('summary');
+             dynSummary.style.cursor = 'pointer';
+             dynSummary.style.fontWeight = 'bold';
+             dynSummary.style.fontSize = '12px';
+             dynSummary.style.marginBottom = '5px';
+             dynSummary.textContent = 'Heap (Dynamic)';
+             dynDetails.appendChild(dynSummary);
+             const dynContainer = document.createElement('div');
+             dynContainer.style.paddingLeft = '5px';
+             
              finalHeapAllocs.forEach(alloc => {
                  const rootNode = document.createElement('div');
                  rootNode.className = 'alloc-item';
                  rootNode.id = 'alloc-node-' + alloc.addr.toString(16);
+                 rootNode.dataset.addr = alloc.addr.toString(16).toLowerCase();
                  rootNode.style.padding = '4px 6px';
                  rootNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
                  
@@ -1108,7 +1167,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  const allocSummary = document.createElement('summary');
                  allocSummary.style.cursor = 'pointer';
                  allocSummary.style.fontSize = '12px';
-                 allocSummary.style.color = '#e53935'; 
+                 allocSummary.style.color = '#ffffff'; 
                  allocSummary.style.fontWeight = 'bold';
                  allocSummary.textContent = alloc.visualName || alloc.name;
                  
@@ -1139,7 +1198,6 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                  
                  allocDetails.appendChild(resContainer);
                  currentContainer.appendChild(allocDetails);
-                 // Remove generic rootNode.ondblclick handler isolating execution targets inherently
                  
                  rootNode.onclick = (e) => {
                     const blockTarget = document.getElementById('mem-block-' + alloc.addr.toString(16));
@@ -1158,8 +1216,83 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                     }
                  };
                  
-                 allocSidebar.appendChild(rootNode);
-              });
+                 dynContainer.appendChild(rootNode);
+             });
+             dynDetails.appendChild(dynContainer);
+             allocSidebar.appendChild(dynDetails);
+             
+             // 2. Static Segment Allocations Grouping inherently tracking ELF layouts
+             const staticGroups = { 'text': [], 'data': [], 'rodata': [], 'bss': [] };
+             const seenStatic = new Set();
+             symbolsData.forEach(sym => {
+                if (sym.sect && staticGroups[sym.sect] && sym.size > 0 && !seenStatic.has(sym.name)) {
+                   seenStatic.add(sym.name);
+                   staticGroups[sym.sect].push(sym);
+                }
+             });
+             
+             ['text', 'data', 'rodata', 'bss'].forEach(sName => {
+                if (staticGroups[sName].length === 0) return;
+                const sDetails = document.createElement('details');
+                const sSummary = document.createElement('summary');
+                sSummary.style.cursor = 'pointer';
+                sSummary.style.fontWeight = 'bold';
+                sSummary.style.fontSize = '12px';
+                sSummary.style.marginTop = '8px';
+                sSummary.style.marginBottom = '4px';
+                sSummary.textContent = 'Static .' + sName + ' (' + staticGroups[sName].length + ')';
+                sDetails.appendChild(sSummary);
+                
+                const sContainer = document.createElement('div');
+                sContainer.style.paddingLeft = '5px';
+                
+                staticGroups[sName].sort((a,b) => a.addr - b.addr).forEach(sym => {
+                   const symNode = document.createElement('div');
+                   symNode.className = 'alloc-item';
+                   symNode.dataset.addr = sym.addr.toString(16).toLowerCase();
+                   symNode.style.padding = '4px 6px';
+                   symNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
+                   symNode.style.cursor = 'pointer';
+                   
+                   const title = document.createElement('div');
+                   title.textContent = sym.name;
+                   title.style.fontSize = '12px';
+                   title.style.color = '#ffffff';
+                   
+                   const sub = document.createElement('div');
+                   sub.style.fontSize = '10px';
+                   sub.style.color = '#e2863b';
+                   sub.style.marginTop = '2px';
+                   sub.innerHTML = '<b>Size:</b> ' + sym.size + ' B <br/><b>Addr:</b> 0x' + sym.addr.toString(16).toUpperCase();
+                   
+                   symNode.appendChild(title);
+                   symNode.appendChild(sub);
+                   
+                   symNode.ondblclick = (e) => {
+                      e.stopPropagation();
+                      if (sym.file) vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
+                   };
+                   symNode.onclick = (e) => {
+                      const blockTarget = document.getElementById('mem-block-' + sym.addr.toString(16));
+                      if (blockTarget) {
+                          mapZoom = 50.0;
+                          document.querySelectorAll('.map-inner').forEach(inner => {
+                             // @ts-ignore
+                             inner.style.width = (mapZoom * 100) + '%';
+                          });
+                          setTimeout(() => {
+                             blockTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                             blockTarget.classList.remove('flash-target');
+                             void blockTarget.offsetWidth;
+                             blockTarget.classList.add('flash-target');
+                          }, 50);
+                      }
+                   };
+                   sContainer.appendChild(symNode);
+                });
+                sDetails.appendChild(sContainer);
+                allocSidebar.appendChild(sDetails);
+             });
           }
           // ----------------------------------------------------
 
