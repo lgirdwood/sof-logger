@@ -4,10 +4,12 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
   const timeFactor = 38420000.0;
   
   const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
-  const ringData = data.map(d => ({ x: d.t / timeFactor, y: d.ring }));
+  const ringData = data.map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
   const intLevelData = data.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
   // Keep only essential primitives required for scatter point colors (exc, tlb, io)
-  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType }));
+  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType, raw: d.raw }));
+  const exceptionData = data.filter(d => d.raw && d.raw.toLowerCase().includes('privilege error'))
+                            .map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
 
   const iMissData = data.map((d, i, arr) => {
     if (i === 0 || d.iMiss == null || arr[i - 1].iMiss == null) return { x: d.t / timeFactor, y: 0 };
@@ -208,7 +210,23 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
             yAxisID: 'yRing',
             stepped: true,
             borderWidth: 2,
-            tension: 0
+            tension: 0,
+            pointStyle: function(context) { return 'circle'; },
+            pointRadius: 0,
+            pointBackgroundColor: 'rgba(0,0,0,0)',
+            pointBorderColor: 'rgba(0,0,0,0)'
+          },
+          {
+            label: 'Exceptions',
+            data: ${JSON.stringify(exceptionData)},
+            borderColor: 'rgba(0,0,0,0)',
+            backgroundColor: 'rgba(0,0,0,0)',
+            yAxisID: 'yRing',
+            showLine: false,
+            pointStyle: 'circle',
+            pointRadius: 6,
+            pointBackgroundColor: 'red',
+            pointBorderColor: 'red'
           },
           {
             label: 'INTLEVEL',
@@ -339,6 +357,16 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                       bestDetails = el;
                     }
                   }
+                }
+
+                // If anomaly triggered entirely outside C execution scope, snap natively strictly directly to the nearest topological temporal branch cleanly intelligently!
+                if (!bestDetails) {
+                    let minDiff = Infinity;
+                    for (let i = 0; i < allDetails.length; i++) {
+                        const startT = parseInt(allDetails[i].dataset.startT, 10);
+                        const delta = Math.abs(startT - clickT);
+                        if (delta < minDiff) { minDiff = delta; bestDetails = allDetails[i]; }
+                    }
                 }
 
                 if (bestDetails) {
@@ -555,6 +583,20 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                   }
                 }
               }
+            } else if (p.raw && p.raw.toLowerCase().includes('privilege error')) {
+                if (stack.length > 0) {
+                  // Only auto-expand ALL parent <details> nodes and color their text red, do not add an inline node!
+                  for (let j = 1; j < stack.length; j++) {
+                      if (stack[j].tagName === 'DETAILS') {
+                          stack[j].open = true;
+                          const sum = stack[j].querySelector('summary');
+                          if (sum) {
+                              sum.style.color = '#ff0000';
+                              sum.style.fontWeight = 'bold';
+                          }
+                      }
+                  }
+                }
             }
           }
           sidebar.appendChild(root);

@@ -25,6 +25,7 @@ export interface LogDataPoint {
   file?: string;
   line?: number;
   caller?: string;
+  raw?: string;
 }
 
 export interface MemoryRegion {
@@ -140,6 +141,8 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
     if (excMatch) {
       currentExc = parseInt(excMatch[1], 10);
       changed = true;
+    } else if (line.toLowerCase().includes('privilege error')) {
+      changed = true;
     }
 
     let currentFuncAddr: number | null = null;
@@ -246,6 +249,7 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
         funcSp: changed && currentFuncSp !== null ? currentFuncSp : undefined,
         funcArgs: changed && currentFuncArgs !== null ? currentFuncArgs : undefined,
         funcRet: changed && currentFuncRet !== null ? currentFuncRet : undefined,
+        raw: line
       });
 
       // Reset transients
