@@ -1,31 +1,6 @@
 import { LogDataPoint, MemoryRegion, SramTopology } from './parser';
 
-export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], regionsMeta: MemoryRegion[] = [], sramTopologies: SramTopology[] = []): string {
-  const timeFactor = 38420000.0;
-  
-  const umData = data.map(d => ({ x: d.t / timeFactor, y: d.um }));
-  const ringData = data.map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
-  const intLevelData = data.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
-  // Keep only essential primitives required for scatter point colors (exc, tlb, io)
-  const callDepthData = data.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType, raw: d.raw }));
-  const exceptionData = data.filter(d => d.raw && d.raw.toLowerCase().includes('privilege error'))
-                            .map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
-
-  const iMissData = data.map((d, i, arr) => {
-    if (i === 0 || d.iMiss == null || arr[i - 1].iMiss == null) return { x: d.t / timeFactor, y: 0 };
-    return { x: d.t / timeFactor, y: Math.max(0, (d.iMiss || 0) - (arr[i - 1].iMiss || 0)) };
-  });
-
-  const dMissData = data.map((d, i, arr) => {
-    if (i === 0 || d.dMiss == null || arr[i - 1].dMiss == null) return { x: d.t / timeFactor, y: 0 };
-    return { x: d.t / timeFactor, y: Math.max(0, (d.dMiss || 0) - (arr[i - 1].dMiss || 0)) };
-  });
-
-  const cDeltaData = data.map((d, i, arr) => {
-    if (i === 0 || d.c == null || arr[i - 1].c == null) return { x: d.t / timeFactor, y: 0 };
-    return { x: d.t / timeFactor, y: Math.max(0, (d.c || 0) - (arr[i - 1].c || 0)) };
-  });
-
+export function getWebviewContent(): string {
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -51,7 +26,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         summary { font-family: monospace; font-size: 11px; white-space: nowrap; padding: 2px; user-select: none; }
         summary:hover { background: var(--vscode-list-hoverBackground); }
         summary.selected { background-color: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
-        .memory-map-layout { display: none; padding: 10px; overflow-y: auto; height: 85vh; }
+        .memory-map-layout { display: none; width: 100vw; height: 85vh; box-sizing: border-box; overflow-y: auto; }
         .memory-region { margin-bottom: 20px; }
         .memory-region h3 { border-bottom: 1px solid var(--vscode-panel-border); padding-bottom: 4px; }
         .map-scrollable { width: 100%; overflow-x: auto; overflow-y: hidden; background: var(--vscode-editor-background); padding: 5px; box-sizing: border-box; }
@@ -80,7 +55,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         <button id="toggleExceptionsBtn" onclick="toggleExceptions()">Toggle Exceptions (On)</button>
         <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
         <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
-        <button onclick="toggleMemoryMap()">Toggle Memory Map</button>
+        <span style="border-left: 1px solid #555; margin-left: 5px; padding-left: 10px;"></span>
+        <button id="btnViewChart" onclick="switchView('chart')" style="background-color: var(--vscode-button-hoverBackground);">View: Execution Chart</button>
+        <button id="btnViewMemory" onclick="switchView('memory')">View: Memory Map</button>
+        <button id="btnViewTerminal" onclick="switchView('terminal')">View: Zephyr Log</button>
         <div id="memory-map-legend" style="display: none; align-items: center; gap: 15px; margin-left: 20px; flex-wrap: wrap;">
           <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(211, 47, 47, 0.9); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">Heap Allocations</span></div>
           <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(25, 118, 210, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.text (Executable)</span></div>
@@ -89,7 +67,10 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(123, 31, 162, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.bss</span></div>
         </div>
       </div>
-      <div class="main-layout" id="mainLayout">
+      <div id="loadingOverlay" style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); display: flex; justify-content: center; align-items: center; z-index: 9999; font-size: 24px;">
+        Parsing QEMU Log Data Environment...
+      </div>
+      <div class="main-layout" id="mainLayout" style="display: none;">
         <div class="sidebar-wrapper">
           <input type="text" id="treeSearch" placeholder="Search function traces..." onkeydown="if(event.key === 'Enter') searchTree(this.value)" />
           <div class="sidebar" id="tree-sidebar"></div>
@@ -99,30 +80,196 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
         </div>
       </div>
       <div class="memory-map-layout" id="memoryMapLayout">
-        <div style="display: flex; gap: 20px; align-items: baseline; margin-bottom: 10px;">
-          <h2>Visual Memory Map</h2>
-          <input type="text" id="allocSearch" placeholder="Search allocations..." onkeydown="if(event.key === 'Enter') searchAllocs(this.value)" style="width: 250px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px;" />
-          <input type="text" id="addressSearch" placeholder="Search Address (e.g. A01)" onkeydown="if(event.key === 'Enter') searchAllocAddress(this.value)" style="width: 250px; margin-left: 10px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px;" />
-        </div>
-        <div style="display: flex; height: calc(100% - 40px); gap: 10px;">
+        <div style="display: flex; height: 100%; gap: 10px;">
           <div class="sidebar-wrapper" style="width: 25%; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); padding-right: 10px;">
-             <h3 style="margin-top: 0; font-size: 14px;">Allocations & Symbols</h3>
+             <h3 style="margin-top: 0; font-size: 14px; margin-bottom: 5px;">Allocations & Symbols</h3>
+             <input type="text" id="allocSearch" placeholder="Search allocations..." onkeydown="if(event.key === 'Enter') searchAllocs(this.value)" style="width: 100%; box-sizing: border-box; margin-bottom: 5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px;" />
+             <input type="text" id="addressSearch" placeholder="Search Address (e.g. A01)" onkeydown="if(event.key === 'Enter') searchAllocAddress(this.value)" style="width: 100%; box-sizing: border-box; margin-bottom: 5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px;" />
              <div class="sidebar" id="alloc-sidebar" style="flex-grow: 1; overflow-y: auto; overflow-x: auto;"></div>
           </div>
           <div id="memory-map-container" style="flex-grow: 1; overflow-y: auto;"></div>
         </div>
       </div>
 
-      <script>
-        try {
-        const logData = ${JSON.stringify(data)};
-        const symbolsData = ${JSON.stringify(symbols)};
-        const regionsMeta = ${JSON.stringify(regionsMeta)};
-        const vscode = acquireVsCodeApi();
+      <div id="terminalLayout" style="display: none; height: 100vh; width: 100vw; box-sizing: border-box; overflow-y: auto; background: #1e1e1e; padding: 10px;">
+        <h3 style="margin-top: 0;">Zephyr Terminal Execution Trace</h3>
+        <pre id="terminalLogContent" style="font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word;"></pre>
+      </div>
 
+      <script>
+        const vscode = acquireVsCodeApi();
+        let logData = [];
+        let symbolsData = [];
+        let regionsMeta = [];
+        let sramTopologies = [];
+        let rawZephyrLog = '';
+        
         let showExceptions = true;
         let showTlb = true;
         let showIo = true;
+
+        window.addEventListener('message', event => {
+            const message = event.data;
+            if (message.command === 'loadData') {
+                try {
+                const ov = document.getElementById('loadingOverlay');
+                if (ov) ov.style.display = 'none';
+                
+                logData = message.logData || [];
+                symbolsData = message.symbols || [];
+                regionsMeta = message.regionsMeta || [];
+                sramTopologies = message.sramTopologies || [];
+                rawZephyrLog = message.zephyrLog || '';
+
+                const timeFactor = 38420000.0;
+                
+                const umData = logData.map(d => ({ x: d.t / timeFactor, y: d.um }));
+                const ringData = logData.map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
+                const intLevelData = logData.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
+                const callDepthData = logData.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType, raw: d.raw }));
+                const exceptionData = logData.filter(d => d.raw && d.raw.toLowerCase().includes('privilege error')).map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
+
+                const iMissData = logData.map((d, i, arr) => {
+                  if (i === 0 || d.iMiss == null || arr[i - 1].iMiss == null) return { x: d.t / timeFactor, y: 0 };
+                  return { x: d.t / timeFactor, y: Math.max(0, (d.iMiss || 0) - (arr[i - 1].iMiss || 0)) };
+                });
+
+                const dMissData = logData.map((d, i, arr) => {
+                  if (i === 0 || d.iMiss == null || arr[i - 1].dMiss == null) return { x: d.t / timeFactor, y: 0 };
+                  return { x: d.t / timeFactor, y: Math.max(0, (d.dMiss || 0) - (arr[i - 1].dMiss || 0)) };
+                });
+
+                const cDeltaData = logData.map((d, i, arr) => {
+                  if (i === 0 || d.c == null || arr[i - 1].c == null) return { x: d.t / timeFactor, y: 0 };
+                  return { x: d.t / timeFactor, y: Math.max(0, (d.c || 0) - (arr[i - 1].c || 0)) };
+                });
+
+                initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionData, intLevelData, iMissData, dMissData);
+                switchView('chart');
+                } catch (e) {
+                   document.body.innerHTML = '<h1 style="color:red;">Exception Caught During Load</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\\n' + e.stack + '</pre>';
+                }
+            } else if (message.command === 'updateSymbols') {
+                try {
+                    logData = message.logData || logData;
+                    symbolsData = message.symbols || [];
+                    
+                    const sidebar = document.getElementById('tree-sidebar');
+                    if (sidebar) {
+                        sidebar.innerHTML = '';
+                        renderSidebar();
+                    }
+
+                    // @ts-ignore
+                    if (window.memoryMapRendered) {
+                        // @ts-ignore
+                        window.memoryMapRendered = false;
+                        const c = document.getElementById('memory-map-container');
+                        if (c) c.innerHTML = '';
+                        const ml = document.getElementById('memoryMapLayout');
+                        if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
+                            switchView('memory');
+                        }
+                    }
+                } catch (e) {
+                    document.body.innerHTML = '<h1 style="color:red;">Exception in updateSymbols</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\\n' + e.stack + '</pre>';
+                    console.error('updateSymbols error:', e);
+                }
+            }
+        });
+
+        try {
+
+        function switchView(viewName) {
+          const main = document.getElementById('mainLayout');
+          const memMap = document.getElementById('memoryMapLayout');
+          const terminal = document.getElementById('terminalLayout');
+
+          const btnChart = document.getElementById('btnViewChart');
+          const btnMem = document.getElementById('btnViewMemory');
+          const btnTerm = document.getElementById('btnViewTerminal');
+
+          // Reset backgrounds
+          btnChart.style.backgroundColor = '';
+          btnMem.style.backgroundColor = '';
+          btnTerm.style.backgroundColor = '';
+
+          // Hide all layouts
+          main.style.display = 'none';
+          if (memMap) memMap.style.display = 'none';
+          terminal.style.display = 'none';
+
+          if (viewName === 'chart') {
+            main.style.display = 'flex';
+            btnChart.style.backgroundColor = 'var(--vscode-button-hoverBackground)';
+          } else if (viewName === 'memory') {
+            if (memMap) memMap.style.display = 'flex';
+            btnMem.style.backgroundColor = 'var(--vscode-button-hoverBackground)';
+            // @ts-ignore
+            if (!window.memoryMapRendered) {
+                const container = document.getElementById('memory-map-container');
+                if (container) {
+                    container.innerHTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%;"><div class="flash-target" style="padding: 20px; background: #333; color: white; border-radius: 8px; font-size: 16px;">Computing Topological Memory Intersections...</div></div>';
+                    setTimeout(() => {
+                        container.innerHTML = '';
+                        // @ts-ignore
+                        if (typeof renderMemoryMap !== 'undefined') renderMemoryMap();
+                        // @ts-ignore
+                        window.memoryMapRendered = true;
+                    }, 50);
+                }
+            }
+          } else if (viewName === 'terminal') {
+            terminal.style.display = 'block';
+            btnTerm.style.backgroundColor = 'var(--vscode-button-hoverBackground)';
+
+            // @ts-ignore
+            if (!window._terminalFormatted) {
+                let htmlLog = rawZephyrLog
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;');
+                
+                htmlLog = htmlLog.replace(/\\b(0x)?[0-9a-fA-F]{6,16}\\b/gi, (match) => {
+                    const hexVal = match.replace(/^0x/i, '');
+                    const addr = parseInt(hexVal, 16);
+                    if (isNaN(addr)) return match;
+
+                    let low = 0, high = symbolsData.length - 1;
+                    let closestIndex = -1;
+                    while (low <= high) {
+                      const mid = Math.floor((low + high) / 2);
+                      if (symbolsData[mid].addr <= addr) {
+                        closestIndex = mid;
+                        low = mid + 1;
+                      } else {
+                        high = mid - 1;
+                      }
+                    }
+                    if (closestIndex !== -1) {
+                      const sym = symbolsData[closestIndex];
+                      if (sym.size > 0 && addr >= sym.addr + sym.size) {
+                        return match;
+                      }
+                      
+                      let titleStr = sym.name + ' (.' + sym.sect + ')';
+                      if (sym.file) titleStr += ' \\n' + sym.file;
+                      if (sym.line) titleStr += ':' + sym.line;
+                      
+                      const safeFile = (sym.file || '').replace(/'/g, "\\\\'");
+                      return \`<span style="color: #64B5F6; text-decoration: underline; cursor: help;" title="\${titleStr}" ondblclick="vscode.postMessage({ command: 'openSource', file: '\${safeFile}', line: \${sym.line || 1} })">\${match}</span>\`;
+                    }
+                    return match;
+                });
+                // @ts-ignore
+                window._terminalFormattedLog = htmlLog;
+                // @ts-ignore
+                window._terminalFormatted = true;
+            }
+            // @ts-ignore
+            document.getElementById('terminalLogContent').innerHTML = window._terminalFormattedLog;
+          }
+        }
 
         function toggleExceptions() {
           showExceptions = !showExceptions;
@@ -142,12 +289,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           window.myChart.update();
         }
 
+        function initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionData, intLevelData, iMissData, dMissData) {
         const ctx = document.getElementById('logChart').getContext('2d');
         
         const datasets = [
           {
             label: 'CCOUNT Delta',
-            data: ${JSON.stringify(cDeltaData)},
+            data: cDeltaData,
             borderColor: 'rgb(201, 203, 207)',
             backgroundColor: 'rgba(201, 203, 207, 0.1)',
             yAxisID: 'yCDelta',
@@ -157,7 +305,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'Call Depth',
-            data: ${JSON.stringify(callDepthData)},
+            data: callDepthData,
             borderColor: 'rgb(255, 205, 86)',
             backgroundColor: 'rgba(255, 205, 86, 0.1)',
             yAxisID: 'yCallDepth',
@@ -195,7 +343,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'UM (User Mode)',
-            data: ${JSON.stringify(umData)},
+            data: umData,
             borderColor: 'rgb(75, 192, 192)',
             backgroundColor: 'rgba(75, 192, 192, 0.1)',
             yAxisID: 'yUM',
@@ -205,7 +353,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'RING',
-            data: ${JSON.stringify(ringData)},
+            data: ringData,
             borderColor: 'rgb(153, 102, 255)',
             backgroundColor: 'rgba(153, 102, 255, 0.1)',
             yAxisID: 'yRing',
@@ -219,7 +367,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'Exceptions',
-            data: ${JSON.stringify(exceptionData)},
+            data: exceptionData,
             borderColor: 'rgba(0,0,0,0)',
             backgroundColor: 'rgba(0,0,0,0)',
             yAxisID: 'yRing',
@@ -231,7 +379,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'INTLEVEL',
-            data: ${JSON.stringify(intLevelData)},
+            data: intLevelData,
             borderColor: 'rgb(255, 159, 64)',
             backgroundColor: 'rgba(255, 159, 64, 0.1)',
             yAxisID: 'yIntLevel',
@@ -241,7 +389,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'I-Cache Miss',
-            data: ${JSON.stringify(iMissData)},
+            data: iMissData,
             borderColor: 'rgb(255, 99, 132)',
             backgroundColor: 'rgba(255, 99, 132, 0.1)',
             yAxisID: 'yIMiss',
@@ -251,7 +399,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           },
           {
             label: 'D-Cache Miss',
-            data: ${JSON.stringify(dMissData)},
+            data: dMissData,
             borderColor: 'rgb(54, 162, 235)',
             backgroundColor: 'rgba(54, 162, 235, 0.1)',
             yAxisID: 'yDMiss',
@@ -522,6 +670,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
           }
         });
 
+        } // End of initChartAndUI
 
         function renderSidebar() {
           const sidebar = document.getElementById('tree-sidebar');
@@ -577,8 +726,17 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
                 details.appendChild(summary);
                 details.dataset.startT = p.t;
                 
-                stack[stack.length - 1].appendChild(details);
-                stack.push(details);
+                // Chrome's renderer will abort layout calculations and silently blank the UI
+                // if the DOM layout tree is nested too deeply recursively (e.g. Unclosed traces).
+                // Safely cap visual trace nesting to a depth of 250!
+                if (stack.length > 250) {
+                    stack[stack.length - 2].appendChild(details); // append parallel to existing depth cap
+                    // Maintain the virtual abstraction so returning pops cleanly when the buffer naturally recedes
+                    stack.push(details); 
+                } else {
+                    stack[stack.length - 1].appendChild(details);
+                    stack.push(details);
+                }
               } else if (p.funcRet) {
                 if (stack.length > 1) {
                   const currentDetails = stack.pop();
@@ -1371,7 +1529,7 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
 
             let bankSize = 131072; // 32 pages explicit hardware fallback
             let explicitBankCount = null;
-            const sramTops = ${JSON.stringify(sramTopologies)};
+            const sramTops = sramTopologies;
             if (sramTops && sramTops.length > 0) {
                const st = sramTops.find(s => rName.toLowerCase().replace(/-/g, '').includes(s.name.toLowerCase().replace(/-/g, '')));
                if (st) {
@@ -2034,10 +2192,13 @@ export function getWebviewContent(data: LogDataPoint[], symbols: any[] = [], reg
 
            return sb;
         }
+        
         } catch (e) {
             document.body.innerHTML = '<h1 style="color:red;">Exception Caught</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\\n' + e.stack + '</pre>';
             console.error(e);
         }
+        
+        vscode.postMessage({ command: 'ready' });
       </script>
     </body>
     </html>

@@ -13,7 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel, memoryRegions: MemoryRegion[] = [], sramTopologies: SramTopology[] = []) {
+    async function resolveElfSymbols(elfPath: string, logData: any[], panel: vscode.WebviewPanel, memoryRegions: MemoryRegion[] = [], sramTopologies: SramTopology[] = [], zephyrLog: string = '') {
       return vscode.window.withProgress({
         location: vscode.ProgressLocation.Notification,
         title: "Loading ELF Symbols (-l formatting)...",
@@ -100,7 +100,7 @@ export function activate(context: vscode.ExtensionContext) {
               }
             }
             
-            panel.webview.html = getWebviewContent(logData, symbols, memoryRegions, sramTopologies);
+            panel.webview.postMessage({ command: 'updateSymbols', logData: logData, symbols: symbols });
             vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
             resolve();
           });
@@ -111,6 +111,12 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       const parseResult = await parseLogFile(logFilePath);
       const logData = parseResult.dataPoints;
+      
+      let zephyrLog = '';
+      const zephyrLogPath = '/tmp/ace-mtrace.log';
+      if (fs.existsSync(zephyrLogPath)) {
+          zephyrLog = fs.readFileSync(zephyrLogPath, 'utf8');
+      }
 
       // Create and show the webview instantly
       const panel = vscode.window.createWebviewPanel(
@@ -123,24 +129,33 @@ export function activate(context: vscode.ExtensionContext) {
         }
       );
 
-      panel.webview.html = getWebviewContent(logData, [], parseResult.memoryRegions, parseResult.sramTopologies);
+      panel.webview.html = getWebviewContent();
 
       let targetElfPath = parseResult.elfPath;
       if (targetElfPath && targetElfPath.endsWith('.ri')) {
         targetElfPath = targetElfPath.replace(/\.ri$/i, '.elf');
       }
 
-      if (!targetElfPath) {
-        vscode.window.showWarningMessage('ParseResult failed to find any ELF strings in QEMU log!');
-      } else if (!fs.existsSync(targetElfPath)) {
-        vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
-      } else {
-        // Fire and forget without blocking!
-        resolveElfSymbols(targetElfPath, logData, panel, parseResult.memoryRegions, parseResult.sramTopologies);
-      }
-
       panel.webview.onDidReceiveMessage(async message => {
-        if (message.command === 'openSource') {
+        if (message.command === 'ready') {
+            panel.webview.postMessage({
+                command: 'loadData',
+                logData: logData,
+                symbols: [],
+                regionsMeta: parseResult.memoryRegions,
+                sramTopologies: parseResult.sramTopologies,
+                zephyrLog: zephyrLog
+            });
+            
+            if (!targetElfPath) {
+              vscode.window.showWarningMessage('ParseResult failed to find any ELF strings in QEMU log!');
+            } else if (!fs.existsSync(targetElfPath)) {
+              vscode.window.showWarningMessage('Parsed ELF path does not exist on disk: ' + targetElfPath);
+            } else {
+              // Fire and forget without blocking!
+              resolveElfSymbols(targetElfPath, logData, panel, parseResult.memoryRegions, parseResult.sramTopologies, zephyrLog);
+            }
+        } else if (message.command === 'openSource') {
           if (message.file && fs.existsSync(message.file)) {
             vscode.workspace.openTextDocument(vscode.Uri.file(message.file)).then(doc => {
               vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside).then(editor => {
