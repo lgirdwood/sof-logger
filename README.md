@@ -72,3 +72,9 @@ To install the successfully bundled `.vsix` payload into any VS Code IDE identic
 - **Scroll Wheel**: Smooth, high-performance decimation bounding box zoom!
 - **Click & Drag**: Generates an isolated translucent blue bounding box isolating precise microsecond executions snapping directly off execution boundaries.
 - **Ctrl + Drag**: Forces a parallel perspective, physically sliding the timeline across milliseconds dynamically without scaling contexts.
+
+## TODO
+
+- [ ] Split up files per feature, clean up the codebase, and apply formal linting and comments. Add proper error paths and emit user-friendly errors.
+- [ ] Implement settings to store configuration data for the QEMU binary path and the generated log file names.
+- [ ] Add the ability to start QEMU directly from within the plugin and stream/read live logs.
