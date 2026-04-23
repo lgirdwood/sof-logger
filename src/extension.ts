@@ -12,6 +12,39 @@ let currentPanelChart: vscode.WebviewPanel | undefined;
 let currentPanelMem: vscode.WebviewPanel | undefined;
 let traceProvider = new TraceTreeProvider();
 let memoryProvider = new MemoryTreeProvider();
+let globalSymbols: any[] = [];
+
+class SOFHoverProvider implements vscode.HoverProvider {
+    provideHover(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken): vscode.ProviderResult<vscode.Hover> {
+        const range = document.getWordRangeAtPosition(position, /0x[0-9a-fA-F]+/);
+        if (!range) return null;
+        const word = document.getText(range);
+        const addr = parseInt(word, 16);
+        if (isNaN(addr) || globalSymbols.length === 0) return null;
+
+        let closestSymbol = null;
+        for (const sym of globalSymbols) {
+             if (sym.size > 0 && addr >= sym.addr && addr < sym.addr + sym.size) {
+                 closestSymbol = sym;
+                 break;
+             }
+        }
+        
+        if (closestSymbol) {
+             const offset = addr - closestSymbol.addr;
+             let md = new vscode.MarkdownString(`**${closestSymbol.name}** + 0x${offset.toString(16).toUpperCase()}\n\n`);
+             md.appendMarkdown(`*Section:* .${closestSymbol.sect}  \n`);
+             md.appendMarkdown(`*Size:* ${closestSymbol.size} Bytes  \n`);
+             if (closestSymbol.file) {
+                 md.appendMarkdown(`*Source:* [${path.basename(closestSymbol.file)}](${vscode.Uri.file(closestSymbol.file).toString()}`);
+                 if (closestSymbol.line) md.appendMarkdown(`#L${closestSymbol.line}`);
+                 md.appendMarkdown(`)\n`);
+             }
+             return new vscode.Hover(md, range);
+        }
+        return null;
+    }
+}
 
 class SearchPanelProvider implements vscode.WebviewViewProvider {
     constructor(private readonly extensionUri: vscode.Uri) {}
@@ -91,8 +124,11 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  zephyrChannel = vscode.window.createOutputChannel('SOF Zephyr Server');
+  zephyrChannel = vscode.window.createOutputChannel('SOF Zephyr Server', 'log');
   context.subscriptions.push(zephyrChannel);
+  context.subscriptions.push(vscode.languages.registerHoverProvider({ language: 'log' }, new SOFHoverProvider()));
+  context.subscriptions.push(vscode.languages.registerHoverProvider({ pattern: '**/*.log' }, new SOFHoverProvider()));
+  
   vscode.window.registerWebviewViewProvider('sofSearchView', new SearchPanelProvider(context.extensionUri));
   vscode.window.registerTreeDataProvider('sofTraceView', traceProvider);
 
@@ -219,7 +255,10 @@ export function activate(context: vscode.ExtensionContext) {
       const getSymbols = async () => {
          if (!targetElfPath || !fs.existsSync(targetElfPath)) return [];
          if (!elfSymbolsPromise) {
-            elfSymbolsPromise = resolveElfSymbols(targetElfPath, logData);
+            elfSymbolsPromise = resolveElfSymbols(targetElfPath, logData).then(sym => {
+                globalSymbols = sym;
+                return sym;
+            });
          }
          return await elfSymbolsPromise;
       };
