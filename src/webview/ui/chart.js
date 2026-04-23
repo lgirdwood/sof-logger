@@ -335,39 +335,41 @@
               yCDelta: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
                 title: { display: true, text: 'C-Delta' },
-                grid: { drawOnChartArea: true }, grace: '20%'
+                grid: { drawOnChartArea: true }, grace: '20%', min: 0
               },
               yCallDepth: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1.5,
-                title: { display: true, text: 'Call Depth' }, suggestedMin: 0, grace: '20%',
+                title: { display: true, text: 'Call Depth' }, grace: '20%', min: 0,
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
               yDMiss: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
                 title: { display: true, text: 'D-Miss' },
-                grid: { drawOnChartArea: true }, grace: '20%'
+                grid: { drawOnChartArea: true }, grace: '20%', min: 0,
+                ticks: { stepSize: 1 }
               },
               yIMiss: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 2,
                 title: { display: true, text: 'I-Miss' },
-                grid: { drawOnChartArea: true }, grace: '20%'
+                grid: { drawOnChartArea: true }, grace: '20%', min: 0,
+                ticks: { stepSize: 1 }
               },
               yRing: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
-                title: { display: true, text: 'RING' }, min: 0, max: 4,
+                title: { display: true, text: 'RING' }, min: 0, max: 3,
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
               yIntLevel: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1.5,
-                title: { display: true, text: 'INTLEVEL' }, suggestedMin: 0, grace: '20%',
+                title: { display: true, text: 'INTLEVEL' }, min: 0, max: 15,
                 grid: { drawOnChartArea: true },
                 ticks: { stepSize: 1 }
               },
               yUM: {
                 type: 'linear', display: true, position: 'left', stack: 'metrics', stackWeight: 1,
-                title: { display: true, text: 'UM' }, min: 0, max: 1.5,
+                title: { display: true, text: 'UM' }, min: 0, max: 1,
                 grid: { drawOnChartArea: true },
                 ticks: { 
                   stepSize: 1,
