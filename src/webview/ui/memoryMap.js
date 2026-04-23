@@ -12,6 +12,33 @@
           let pendingZoomAnchor = null;
           const layoutContainer = document.getElementById('memoryMapLayout');
 
+          let mapZoom = 1.0;
+          let baseZoom = 1.0;
+          let visualPanX = 0;
+          let visualPanY = 0;
+          let redrawTimeout = null;
+
+          function updateEdgeLabels() {
+              const scrolls = container.querySelectorAll('.map-scrollable');
+              scrolls.forEach(s => {
+                  const bRect = s.getBoundingClientRect();
+                  s.querySelectorAll('.bank-row').forEach(row => {
+                      const endL = row.querySelector('.end-label');
+                      if (endL) {
+                          const w = row.getBoundingClientRect().width;
+                          const vw = bRect.width;
+                          const sl = s.scrollLeft;
+                          endL.style.left = Math.min(w - 60, Math.max(100, sl + vw - 60)) + 'px';
+                      }
+                      const stL = row.querySelector('.start-label');
+                      if (stL) {
+                          const sl = s.scrollLeft;
+                          stL.style.left = Math.max(2, sl + 2) + 'px';
+                      }
+                  });
+              });
+          }
+
           function commitRedraw() {
               baseZoom = mapZoom;
               visualPanX = 0;
@@ -310,196 +337,7 @@
           });
           
           // Populate allocation sidebar natively mimicking structural elements securely!
-          const allocSidebar = document.getElementById('alloc-sidebar');
-          if (allocSidebar) {
-             allocSidebar.innerHTML = '';
-             
-             // 1. Dynamic Heap Allocations Root
-             const dynDetails = document.createElement('details');
-             dynDetails.open = true;
-             const dynSummary = document.createElement('summary');
-             dynSummary.style.cursor = 'pointer';
-             dynSummary.style.fontWeight = 'bold';
-             dynSummary.style.fontSize = '12px';
-             dynSummary.style.marginBottom = '5px';
-             dynSummary.textContent = 'Heap (Dynamic)';
-             dynDetails.appendChild(dynSummary);
-             const dynContainer = document.createElement('div');
-             dynContainer.style.paddingLeft = '5px';
-             
-             finalHeapAllocs.forEach(alloc => {
-                 const rootNode = document.createElement('div');
-                 rootNode.className = 'alloc-item';
-                 rootNode.id = 'alloc-node-' + alloc.addr.toString(16);
-                 rootNode.dataset.addr = alloc.addr.toString(16).toLowerCase();
-                 rootNode.style.padding = '4px 6px';
-                 rootNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
-                 
-                 let currentContainer = rootNode;
-                 const chain = alloc.visualStack || alloc.stackChain || [];
-                 
-                 chain.forEach((funcName, idx) => {
-                    const details = document.createElement('details');
-                    details.open = (idx === 0); 
-                    const summary = document.createElement('summary');
-                    summary.style.cursor = 'pointer';
-                    summary.style.fontSize = '12px';
-                    summary.style.padding = '2px 0';
-                    summary.textContent = funcName;
-                    
-                    summary.ondblclick = (e) => {
-                        e.stopPropagation();
-                        const sym = symbolsData.find(s => s.name === funcName);
-                        if (sym && sym.file) {
-                            vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
-                        }
-                    };
-                    
-                    details.appendChild(summary);
-                    
-                    const innerContainer = document.createElement('div');
-                    innerContainer.style.paddingLeft = '15px';
-                    innerContainer.style.borderLeft = '1px dashed var(--vscode-editorGroup-border)';
-                    innerContainer.style.marginLeft = '5px';
-                    
-                    details.appendChild(innerContainer);
-                    currentContainer.appendChild(details);
-                    
-                    currentContainer = innerContainer;
-                 });
-                 
-                 const allocDetails = document.createElement('details');
-                 allocDetails.open = true;
-                 const allocSummary = document.createElement('summary');
-                 allocSummary.style.cursor = 'pointer';
-                 allocSummary.style.fontSize = '12px';
-                 allocSummary.style.color = '#ffffff'; 
-                 allocSummary.style.fontWeight = 'bold';
-                 allocSummary.textContent = alloc.visualName || alloc.name;
-                 
-                 allocSummary.ondblclick = (e) => {
-                     e.stopPropagation();
-                     const sym = symbolsData.find(s => s.name === (alloc.visualName || alloc.name));
-                     if (sym && sym.file) {
-                         vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
-                     }
-                 };
-                 
-                 allocDetails.appendChild(allocSummary);
-                 
-                 const resContainer = document.createElement('div');
-                 resContainer.style.paddingLeft = '15px';
-                 resContainer.style.borderLeft = '1px dashed var(--vscode-editorGroup-border)';
-                 resContainer.style.marginLeft = '5px';
-                 resContainer.style.fontSize = '12px';
-                 resContainer.style.color = '#e2863b';
-                 resContainer.style.lineHeight = '1.4';
-                 
-                 let htmlText = '<b>Size:</b> ' + alloc.size + ' B<br/>';
-                 if (alloc.flags !== 'N/A') htmlText += '<b>Flags:</b> ' + alloc.flags + '<br/>';
-                 htmlText += '<b>Ret Addr:</b> 0x' + alloc.addr.toString(16).toUpperCase() + '<br/>';
-                 htmlText += '<span style="font-size:10px; color:var(--vscode-descriptionForeground)">(' + alloc.args.join(', ') + ')</span>';
-                 
-                 resContainer.innerHTML = htmlText;
-                 
-                 allocDetails.appendChild(resContainer);
-                 currentContainer.appendChild(allocDetails);
-                 
-                 rootNode.onclick = (e) => {
-                    const blockTarget = document.getElementById('mem-block-' + alloc.addr.toString(16));
-                    if (blockTarget) {
-                        mapZoom = 50.0;
-                        document.querySelectorAll('.map-inner').forEach(inner => {
-                           // @ts-ignore
-                           inner.style.width = (mapZoom * 100) + '%';
-                        });
-                        setTimeout(() => {
-                           blockTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-                           blockTarget.classList.remove('flash-target');
-                           void blockTarget.offsetWidth; // Trigger DOM reflow seamlessly
-                           blockTarget.classList.add('flash-target');
-                        }, 50);
-                    }
-                 };
-                 
-                 dynContainer.appendChild(rootNode);
-             });
-             dynDetails.appendChild(dynContainer);
-             allocSidebar.appendChild(dynDetails);
-             
-             // 2. Static Segment Allocations Grouping inherently tracking ELF layouts
-             const staticGroups = { 'text': [], 'data': [], 'rodata': [], 'bss': [] };
-             const seenStatic = new Set();
-             symbolsData.forEach(sym => {
-                if (sym.sect && staticGroups[sym.sect] && sym.size > 0 && !seenStatic.has(sym.name)) {
-                   seenStatic.add(sym.name);
-                   staticGroups[sym.sect].push(sym);
-                }
-             });
-             
-             ['text', 'data', 'rodata', 'bss'].forEach(sName => {
-                if (staticGroups[sName].length === 0) return;
-                const sDetails = document.createElement('details');
-                const sSummary = document.createElement('summary');
-                sSummary.style.cursor = 'pointer';
-                sSummary.style.fontWeight = 'bold';
-                sSummary.style.fontSize = '12px';
-                sSummary.style.marginTop = '8px';
-                sSummary.style.marginBottom = '4px';
-                sSummary.textContent = 'Static .' + sName + ' (' + staticGroups[sName].length + ')';
-                sDetails.appendChild(sSummary);
-                
-                const sContainer = document.createElement('div');
-                sContainer.style.paddingLeft = '5px';
-                
-                staticGroups[sName].sort((a,b) => a.addr - b.addr).forEach(sym => {
-                   const symNode = document.createElement('div');
-                   symNode.className = 'alloc-item';
-                   symNode.dataset.addr = sym.addr.toString(16).toLowerCase();
-                   symNode.style.padding = '4px 6px';
-                   symNode.style.borderBottom = '1px solid var(--vscode-panel-border)';
-                   symNode.style.cursor = 'pointer';
-                   
-                   const title = document.createElement('div');
-                   title.textContent = sym.name;
-                   title.style.fontSize = '12px';
-                   title.style.color = '#ffffff';
-                   
-                   const sub = document.createElement('div');
-                   sub.style.fontSize = '10px';
-                   sub.style.color = '#e2863b';
-                   sub.style.marginTop = '2px';
-                   sub.innerHTML = '<b>Size:</b> ' + sym.size + ' B <br/><b>Addr:</b> 0x' + sym.addr.toString(16).toUpperCase();
-                   
-                   symNode.appendChild(title);
-                   symNode.appendChild(sub);
-                   
-                   symNode.ondblclick = (e) => {
-                      e.stopPropagation();
-                      if (sym.file) vscode.postMessage({ command: 'openSource', file: sym.file, line: sym.line || 1 });
-                   };
-                   symNode.onclick = (e) => {
-                      const blockTarget = document.getElementById('mem-block-' + sym.addr.toString(16));
-                      if (blockTarget) {
-                          mapZoom = 50.0;
-                          document.querySelectorAll('.map-inner').forEach(inner => {
-                             // @ts-ignore
-                             inner.style.width = (mapZoom * 100) + '%';
-                          });
-                          setTimeout(() => {
-                             blockTarget.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-                             blockTarget.classList.remove('flash-target');
-                             void blockTarget.offsetWidth;
-                             blockTarget.classList.add('flash-target');
-                          }, 50);
-                      }
-                   };
-                   sContainer.appendChild(symNode);
-                });
-                sDetails.appendChild(sContainer);
-                allocSidebar.appendChild(sDetails);
-             });
-          }
+
           // ----------------------------------------------------
 
           let regions = {};
@@ -1240,10 +1078,3 @@
 
            return sb;
         }
-        
-        } catch (e) {
-            document.body.innerHTML = '<h1 style="color:red;">Exception Caught</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\n' + e.stack + '</pre>';
-            console.error(e);
-        }
-        
-        vscode.postMessage({ command: 'ready' });

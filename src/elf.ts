@@ -8,19 +8,15 @@ import * as cp from 'child_process';
  */
 export async function resolveElfSymbols(
   elfPath: string,
-  logData: any[],
-  panel: vscode.WebviewPanel,
-  memoryRegions: any[] = [],
-  sramTopologies: any[] = [],
-  zephyrLog = ''
-) {
+  logData: any[]
+): Promise<any[]> {
   // Present a native VS Code progress bar indicating long-running tasks seamlessly.
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
     title: "Loading ELF Symbols (-l formatting)...",
     cancellable: false
   }, async (progress) => {
-    return new Promise<void>((resolve) => {
+    return new Promise<any[]>((resolve) => {
       // Execute the native `nm` binary dynamically pulling virtual section scopes 
       // with a dynamic memory buffer constraint avoiding NodeJS heap fatalities.
       const config = vscode.workspace.getConfiguration('sofLogger');
@@ -30,7 +26,7 @@ export async function resolveElfSymbols(
         if (error) {
           vscode.window.showErrorMessage('Error reading elf: ' + error.message);
           console.error("Fatal exception invoking nm process.", error);
-          resolve();
+          resolve([]);
           return;
         }
         
@@ -113,9 +109,8 @@ export async function resolveElfSymbols(
           }
         }
         
-        panel.webview.postMessage({ command: 'updateSymbols', logData: logData, symbols: symbols });
         vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
-        resolve();
+        resolve(symbols);
       });
     });
   });

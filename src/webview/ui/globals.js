@@ -3,7 +3,6 @@ const vscode = acquireVsCodeApi();
         let symbolsData = [];
         let regionsMeta = [];
         let sramTopologies = [];
-        let rawZephyrLog = '';
         
         let showExceptions = true;
         let showTlb = true;
@@ -20,7 +19,6 @@ const vscode = acquireVsCodeApi();
                 symbolsData = message.symbols || [];
                 regionsMeta = message.regionsMeta || [];
                 sramTopologies = message.sramTopologies || [];
-                rawZephyrLog = message.zephyrLog || '';
 
                 const timeFactor = 38420000.0;
                 
@@ -45,8 +43,11 @@ const vscode = acquireVsCodeApi();
                   return { x: d.t / timeFactor, y: Math.max(0, (d.c || 0) - (arr[i - 1].c || 0)) };
                 });
 
-                initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionData, intLevelData, iMissData, dMissData);
-                switchView('chart');
+                if (typeof initChartAndUI !== 'undefined') {
+                    initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionData, intLevelData, iMissData, dMissData);
+                }
+                // Dynamically boot exclusively exactly the requested layout natively!
+                switchView(window.ACTIVE_LAYOUT_TYPE || 'chart');
                 } catch (e) {
                    document.body.innerHTML = '<h1 style="color:red;">Exception Caught During Load</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\n' + e.stack + '</pre>';
                 }
@@ -55,12 +56,7 @@ const vscode = acquireVsCodeApi();
                     logData = message.logData || logData;
                     symbolsData = message.symbols || [];
                     
-                    const sidebar = document.getElementById('tree-sidebar');
-                    if (sidebar) {
-                        sidebar.innerHTML = '';
-                        renderSidebar();
-                    }
-
+                    // Legacy trace maps cleanly dumped! VS Code Activity Bar handles this natively identically elegantly!
                     // @ts-ignore
                     if (window.memoryMapRendered) {
                         // @ts-ignore
@@ -76,36 +72,37 @@ const vscode = acquireVsCodeApi();
                     document.body.innerHTML = '<h1 style="color:red;">Exception in updateSymbols</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\n' + e.stack + '</pre>';
                     console.error('updateSymbols error:', e);
                 }
+            } else if (message.command === 'zoomBounds') {
+                if (window.myChart && message.startT !== undefined) {
+                    const startX = message.startT / 38420000.0;
+                    let endX = message.endT !== undefined ? message.endT / 38420000.0 : startX;
+                    let duration = endX - startX;
+                    
+                    if (duration === 0) duration = 0.001; // Scale arbitrarily only for instantaneous boundaries seamlessly
+                    const padding = duration * 0.5; 
+                    
+                    window.myChart.options.scales.x.min = startX - padding;
+                    window.myChart.options.scales.x.max = endX + padding;
+                    window.myChart.update();
+                }
             }
         });
-
-        try {
-
         function switchView(viewName) {
           const main = document.getElementById('mainLayout');
           const memMap = document.getElementById('memoryMapLayout');
-          const terminal = document.getElementById('terminalLayout');
 
-          const btnChart = document.getElementById('btnViewChart');
-          const btnMem = document.getElementById('btnViewMemory');
-          const btnTerm = document.getElementById('btnViewTerminal');
-
-          // Reset backgrounds
-          btnChart.style.backgroundColor = '';
-          btnMem.style.backgroundColor = '';
-          btnTerm.style.backgroundColor = '';
-
-          // Hide all layouts
-          main.style.display = 'none';
+          // Hide all layouts seamlessly
+          if (main) main.style.display = 'none';
           if (memMap) memMap.style.display = 'none';
-          terminal.style.display = 'none';
+          
+          const toolbar = document.querySelector('.toolbar');
 
           if (viewName === 'chart') {
-            main.style.display = 'flex';
-            btnChart.style.backgroundColor = 'var(--vscode-button-hoverBackground)';
+            if (main) main.style.display = 'flex';
           } else if (viewName === 'memory') {
             if (memMap) memMap.style.display = 'flex';
-            btnMem.style.backgroundColor = 'var(--vscode-button-hoverBackground)';
+            if (toolbar) toolbar.style.display = 'none'; // Reclaim vertical space exclusively for native map
+
             // @ts-ignore
             if (!window.memoryMapRendered) {
                 const container = document.getElementById('memory-map-container');
@@ -120,54 +117,10 @@ const vscode = acquireVsCodeApi();
                     }, 50);
                 }
             }
-          } else if (viewName === 'terminal') {
-            terminal.style.display = 'block';
-            btnTerm.style.backgroundColor = 'var(--vscode-button-hoverBackground)';
-
-            // @ts-ignore
-            if (!window._terminalFormatted) {
-                let htmlLog = rawZephyrLog
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;');
-                
-                htmlLog = htmlLog.replace(/\b(0x)?[0-9a-fA-F]{6,16}\b/gi, (match) => {
-                    const hexVal = match.replace(/^0x/i, '');
-                    const addr = parseInt(hexVal, 16);
-                    if (isNaN(addr)) return match;
-
-                    let low = 0, high = symbolsData.length - 1;
-                    let closestIndex = -1;
-                    while (low <= high) {
-                      const mid = Math.floor((low + high) / 2);
-                      if (symbolsData[mid].addr <= addr) {
-                        closestIndex = mid;
-                        low = mid + 1;
-                      } else {
-                        high = mid - 1;
-                      }
-                    }
-                    if (closestIndex !== -1) {
-                      const sym = symbolsData[closestIndex];
-                      if (sym.size > 0 && addr >= sym.addr + sym.size) {
-                        return match;
-                      }
-                      
-                      let titleStr = sym.name + ' (.' + sym.sect + ')';
-                      if (sym.file) titleStr += ' \n' + sym.file;
-                      if (sym.line) titleStr += ':' + sym.line;
-                      
-                      const safeFile = (sym.file || '').replace(/'/g, "\\'");
-                      return `<span style="color: #64B5F6; text-decoration: underline; cursor: help;" title="${titleStr}" ondblclick="vscode.postMessage({ command: 'openSource', file: '${safeFile}', line: ${sym.line || 1} })">${match}</span>`;
-                    }
-                    return match;
-                });
-                // @ts-ignore
-                window._terminalFormattedLog = htmlLog;
-                // @ts-ignore
-                window._terminalFormatted = true;
-            }
-            // @ts-ignore
-            document.getElementById('terminalLogContent').innerHTML = window._terminalFormattedLog;
           }
         }
+        
+        // Broadcast the asynchronous execution cycle cleanly completely decoupling initialization deadlocks cleanly natively
+        setTimeout(() => {
+            vscode.postMessage({ command: 'ready' });
+        }, 100);

@@ -23,6 +23,32 @@
         "title": "SOF Logger: Visualize QEMU Log"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "sof-logger",
+          "title": "SOF Logger",
+          "icon": "$(pulse)"
+        }
+      ]
+    },
+    "views": {
+      "sof-logger": [
+        {
+          "type": "webview",
+          "id": "sofSearchView",
+          "name": "SOF Qemu"
+        },
+        {
+          "id": "sofTraceView",
+          "name": "SOF Execution Trace"
+        },
+        {
+          "id": "sofMemoryView",
+          "name": "SOF Allocations & Symbols"
+        }
+      ]
+    },
     "configuration": {
       "title": "SOF Logger",
       "properties": {

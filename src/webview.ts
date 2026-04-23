@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 
-export function getWebviewContent(extensionPath: string) {
+export function getWebviewContent(extensionPath: string, layoutType: 'chart' | 'memory' = 'chart') {
     const layoutPath = path.join(extensionPath, 'src', 'webview', 'ui', 'layout.html');
     const cssPath = path.join(extensionPath, 'src', 'webview', 'ui', 'style.css');
     const uiDir = path.join(extensionPath, 'src', 'webview', 'ui');
@@ -19,9 +19,14 @@ export function getWebviewContent(extensionPath: string) {
         const jsGlobals = fs.existsSync(path.join(uiDir, 'globals.js')) ? fs.readFileSync(path.join(uiDir, 'globals.js'), 'utf8') : '';
         const jsToggles = fs.existsSync(path.join(uiDir, 'toggles.js')) ? fs.readFileSync(path.join(uiDir, 'toggles.js'), 'utf8') : '';
         const jsChart = fs.existsSync(path.join(uiDir, 'chart.js')) ? fs.readFileSync(path.join(uiDir, 'chart.js'), 'utf8') : '';
-        const jsSidebar = fs.existsSync(path.join(uiDir, 'sidebar.js')) ? fs.readFileSync(path.join(uiDir, 'sidebar.js'), 'utf8') : '';
         const jsMemMap = fs.existsSync(path.join(uiDir, 'memoryMap.js')) ? fs.readFileSync(path.join(uiDir, 'memoryMap.js'), 'utf8') : '';
-        jsBody = [jsGlobals, jsToggles, jsChart, jsSidebar, jsMemMap].join('\n\n');
+        
+        if (layoutType === 'chart') {
+            jsBody = [jsGlobals, jsToggles, jsChart].join('\n\n');
+        } else {
+            jsBody = [jsGlobals, jsMemMap].join('\n\n');
+        }
+        
     } catch (fsErr: any) {
         htmlBody = `<h1 style="color:red">Fatal Webview Generation IO Exception</h1><pre style="color:red;white-space:pre-wrap;">${fsErr.message}</pre>`;
         console.error('Failed fetching UI component layouts dynamically:', fsErr);
@@ -44,6 +49,7 @@ ${cssBody}
 ${htmlBody}
   <!-- Natively initialize DOM structures -->
   <script>
+    window.ACTIVE_LAYOUT_TYPE = '${layoutType}';
 ${jsBody}
   </script>
 </body>
