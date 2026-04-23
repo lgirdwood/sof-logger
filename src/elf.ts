@@ -22,8 +22,11 @@ export async function resolveElfSymbols(
   }, async (progress) => {
     return new Promise<void>((resolve) => {
       // Execute the native `nm` binary dynamically pulling virtual section scopes 
-      // with a 50MB memory buffer constraint avoiding NodeJS heap fatalities.
-      cp.exec(`nm -nS -l ${elfPath}`, { maxBuffer: 1024 * 1024 * 50 }, (error: any, stdout: string) => {
+      // with a dynamic memory buffer constraint avoiding NodeJS heap fatalities.
+      const config = vscode.workspace.getConfiguration('sofLogger');
+      const maxMemMB = config.get<number>('bufferSizeMB', 50);
+
+      cp.exec(`nm -nS -l ${elfPath}`, { maxBuffer: 1024 * 1024 * maxMemMB }, (error: any, stdout: string) => {
         if (error) {
           vscode.window.showErrorMessage('Error reading elf: ' + error.message);
           console.error("Fatal exception invoking nm process.", error);

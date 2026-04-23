@@ -7,7 +7,9 @@ import { resolveElfSymbols } from './elf';
 
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand('sof-logger.visualize', async () => {
-    const logFilePath = '/tmp/qemu-exec-default.log';
+    // Read workspace configuration bridging the graphic UI preferences exclusively natively.
+    const config = vscode.workspace.getConfiguration('sofLogger');
+    const logFilePath = config.get<string>('qemuLogFile', '/tmp/qemu-exec-default.log');
 
     if (!fs.existsSync(logFilePath)) {
       vscode.window.showErrorMessage(`Log file not found: ${logFilePath}`);
@@ -22,7 +24,7 @@ export function activate(context: vscode.ExtensionContext) {
       // Attempts to ingest Zephyr core output strings. Wrapped entirely isolated 
       // preventing file lock failures from terminating tracing visualizers fatally!
       let zephyrLog = '';
-      const zephyrLogPath = '/tmp/ace-mtrace.log';
+      const zephyrLogPath = config.get<string>('mtraceLogFile', '/tmp/ace-mtrace.log');
       try {
         if (fs.existsSync(zephyrLogPath)) {
             zephyrLog = fs.readFileSync(zephyrLogPath, 'utf8');

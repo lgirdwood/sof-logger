@@ -22,7 +22,37 @@
         "command": "sof-logger.visualize",
         "title": "SOF Logger: Visualize QEMU Log"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "SOF Logger",
+      "properties": {
+        "sofLogger.qemuPath": {
+          "type": "string",
+          "default": "qemu-system-xtensa",
+          "description": "Path to the QEMU execution binary"
+        },
+        "sofLogger.qemuOptions": {
+          "type": "string",
+          "default": "",
+          "description": "Command line options appended to the QEMU launch script natively."
+        },
+        "sofLogger.qemuLogFile": {
+          "type": "string",
+          "default": "/tmp/qemu-exec-default.log",
+          "description": "Absolute path to the QEMU execution trace log."
+        },
+        "sofLogger.mtraceLogFile": {
+          "type": "string",
+          "default": "/tmp/ace-mtrace.log",
+          "description": "Absolute path to the exported Zephyr terminal string output log."
+        },
+        "sofLogger.bufferSizeMB": {
+          "type": "number",
+          "default": 50,
+          "description": "Megabyte limit for child_process buffer captures (e.g. `nm -l` execution)."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
