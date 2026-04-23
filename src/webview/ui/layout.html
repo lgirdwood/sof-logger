@@ -1,0 +1,47 @@
+<body>
+      <div class="toolbar">
+        <h2>QEMU Log Execution</h2>
+        <button onclick="resetZoom()">Reset Zoom</button>
+        <button id="toggleExceptionsBtn" onclick="toggleExceptions()">Toggle Exceptions (On)</button>
+        <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
+        <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
+        <span style="border-left: 1px solid #555; margin-left: 5px; padding-left: 10px;"></span>
+        <button id="btnViewChart" onclick="switchView('chart')" style="background-color: var(--vscode-button-hoverBackground);">View: Execution Chart</button>
+        <button id="btnViewMemory" onclick="switchView('memory')">View: Memory Map</button>
+        <button id="btnViewTerminal" onclick="switchView('terminal')">View: Zephyr Log</button>
+        <div id="memory-map-legend" style="display: none; align-items: center; gap: 15px; margin-left: 20px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(211, 47, 47, 0.9); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">Heap Allocations</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(25, 118, 210, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.text (Executable)</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(56, 142, 60, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.rodata</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(129, 199, 132, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.data</span></div>
+          <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(123, 31, 162, 0.85); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">.bss</span></div>
+        </div>
+      </div>
+      <div id="loadingOverlay" style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); display: flex; justify-content: center; align-items: center; z-index: 9999; font-size: 24px;">
+        Parsing QEMU Log Data Environment...
+      </div>
+      <div class="main-layout" id="mainLayout" style="display: none;">
+        <div class="sidebar-wrapper">
+          <input type="text" id="treeSearch" placeholder="Search function traces..." onkeydown="if(event.key === 'Enter') searchTree(this.value)" />
+          <div class="sidebar" id="tree-sidebar"></div>
+        </div>
+        <div class="chart-container">
+          <canvas id="logChart"></canvas>
+        </div>
+      </div>
+      <div class="memory-map-layout" id="memoryMapLayout">
+        <div style="display: flex; height: 100%; gap: 10px;">
+          <div class="sidebar-wrapper" style="width: 25%; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid var(--vscode-panel-border); padding-right: 10px;">
+             <h3 style="margin-top: 0; font-size: 14px; margin-bottom: 5px;">Allocations & Symbols</h3>
+             <input type="text" id="allocSearch" placeholder="Search allocations..." onkeydown="if(event.key === 'Enter') searchAllocs(this.value)" style="width: 100%; box-sizing: border-box; margin-bottom: 5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px;" />
+             <input type="text" id="addressSearch" placeholder="Search Address (e.g. A01)" onkeydown="if(event.key === 'Enter') searchAllocAddress(this.value)" style="width: 100%; box-sizing: border-box; margin-bottom: 5px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 6px;" />
+             <div class="sidebar" id="alloc-sidebar" style="flex-grow: 1; overflow-y: auto; overflow-x: auto;"></div>
+          </div>
+          <div id="memory-map-container" style="flex-grow: 1; overflow-y: auto;"></div>
+        </div>
+      </div>
+
+      <div id="terminalLayout" style="display: none; height: 100vh; width: 100vw; box-sizing: border-box; overflow-y: auto; background: #1e1e1e; padding: 10px;">
+        <h3 style="margin-top: 0;">Zephyr Terminal Execution Trace</h3>
+        <pre id="terminalLogContent" style="font-family: 'Courier New', Courier, monospace; font-size: 13px; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word;"></pre>
+      </div>

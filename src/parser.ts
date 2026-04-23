@@ -81,8 +81,8 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
   // Coherent Alias Extraction
   const aliasRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s+non-coherent:\s+\d+\s+core\s+shadows\s+@\s+(0x[0-9a-fA-F]+),\s+coherent\s+alias\s+@\s+(0x[0-9a-fA-F]+)\s+\(size\s+(0x[0-9a-fA-F]+)\)/i;
 
-  let parsedRegions: MemoryRegion[] = [];
-  let parsedSramTopologies: SramTopology[] = [];
+  const parsedRegions: MemoryRegion[] = [];
+  const parsedSramTopologies: SramTopology[] = [];
 
   let currentElfPath: string | null = null;
   let currentUM: number | null = null;
