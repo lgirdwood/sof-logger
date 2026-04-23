@@ -1,5 +1,8 @@
+        // Core Entrypoint mapping strictly synchronized telemetry variables 
+        // into dynamically scaled DOM element geometries (Chart.JS) natively.
         function initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionData, intLevelData, iMissData, dMissData) {
-        const ctx = document.getElementById('logChart').getContext('2d');
+        try {
+          const ctx = document.getElementById('logChart').getContext('2d');
         
         const datasets = [
           {
@@ -379,4 +382,7 @@
           }
         });
 
+        } catch (chartErr) {
+          console.error("Fatal failure initializing executing graph bounds explicitly:", chartErr);
+        }
         } // End of initChartAndUI

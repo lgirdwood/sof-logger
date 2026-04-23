@@ -18,10 +18,18 @@ export function activate(context: vscode.ExtensionContext) {
       const parseResult = await parseLogFile(logFilePath);
       const logData = parseResult.dataPoints;
       
+      // [FEATURE] Terminal Telemetry Ingestion
+      // Attempts to ingest Zephyr core output strings. Wrapped entirely isolated 
+      // preventing file lock failures from terminating tracing visualizers fatally!
       let zephyrLog = '';
       const zephyrLogPath = '/tmp/ace-mtrace.log';
-      if (fs.existsSync(zephyrLogPath)) {
-          zephyrLog = fs.readFileSync(zephyrLogPath, 'utf8');
+      try {
+        if (fs.existsSync(zephyrLogPath)) {
+            zephyrLog = fs.readFileSync(zephyrLogPath, 'utf8');
+        }
+      } catch (logErr: any) {
+        vscode.window.showWarningMessage(`Term log read failed (non-fatal): ${logErr.message}`);
+        console.error('Zephyr log read error:', logErr);
       }
 
       // Create and show the webview instantly

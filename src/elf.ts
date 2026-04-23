@@ -2,6 +2,10 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as cp from 'child_process';
 
+/**
+ * Asynchronously reads and decodes the ELF binary structure mapping virtual functions.
+ * Executes the `nm` subsystem to extract detailed structural sizes matching execution offsets.
+ */
 export async function resolveElfSymbols(
   elfPath: string,
   logData: any[],
@@ -10,18 +14,24 @@ export async function resolveElfSymbols(
   sramTopologies: any[] = [],
   zephyrLog = ''
 ) {
+  // Present a native VS Code progress bar indicating long-running tasks seamlessly.
   return vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
     title: "Loading ELF Symbols (-l formatting)...",
     cancellable: false
   }, async (progress) => {
     return new Promise<void>((resolve) => {
+      // Execute the native `nm` binary dynamically pulling virtual section scopes 
+      // with a 50MB memory buffer constraint avoiding NodeJS heap fatalities.
       cp.exec(`nm -nS -l ${elfPath}`, { maxBuffer: 1024 * 1024 * 50 }, (error: any, stdout: string) => {
         if (error) {
           vscode.window.showErrorMessage('Error reading elf: ' + error.message);
+          console.error("Fatal exception invoking nm process.", error);
           resolve();
           return;
         }
+        
+        // Output array formatting ELF segments linearly internally
         const symbols: {addr: number, size: number, name: string, file?: string, line?: number, sect?: string}[] = [];
         const lines = stdout.split('\n');
         for (const rawLine of lines) {
@@ -68,11 +78,15 @@ export async function resolveElfSymbols(
           }
         }
 
+        // Post-process the initial log mappings natively dynamically re-interpolating 
+        // specific instruction limits matching the retrieved ELF layouts mathematically
         for (const d of logData) {
           if (d.funcAddr !== undefined) {
             const addr = d.funcAddr;
             let low = 0, high = symbols.length - 1;
             let closestIndex = -1;
+            
+            // Execute standard binary-search resolving layout mapping rapidly
             while (low <= high) {
               const mid = Math.floor((low + high) / 2);
               if (symbols[mid].addr <= addr) {
@@ -85,7 +99,8 @@ export async function resolveElfSymbols(
             if (closestIndex !== -1) {
               const sym = symbols[closestIndex];
               if (sym.size > 0 && addr >= sym.addr + sym.size) {
-                // outside strictly bound size
+                // Address exceeded strictly bound function size limit natively
+                // Silently drop mappings exceeding the strictly bound size constraints.
               } else {
                 d.funcName = sym.name;
                 if (sym.file) d.file = sym.file;

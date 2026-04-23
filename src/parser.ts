@@ -48,6 +48,7 @@ export interface ParseResult {
 }
 
 export async function parseLogFile(filePath: string): Promise<ParseResult> {
+  // Gracefully initiate a low footprint continuous readline scanner bypassing node heap issues over huge payloads.
   const fileStream = fs.createReadStream(filePath);
   const rl = readline.createInterface({
     input: fileStream,
@@ -56,7 +57,7 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
 
   const dataPoints: LogDataPoint[] = [];
 
-  // Patterns
+  // Central mapping RegExp sequences tracking hardware state exceptions natively
   // Matches [T:0x... C:0x...] OR [c:0 T:0x... C:0x...]
   const tRegex = /^\[(?:c:\d+\s+)?T:(0x[0-9a-fA-F]+)(?:\s+C:(0x[0-9a-fA-F]+))?/;
   // ps=0x0006002f or PS = 0x00060033
@@ -94,14 +95,16 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
   let currentT = 0;
   let currentC: number | null = null;
 
-  for await (const line of rl) {
-    const tMatch = line.match(tRegex);
-    if (tMatch) {
-      currentT = parseInt(tMatch[1], 16);
-      if (tMatch[2]) {
-        currentC = parseInt(tMatch[2], 16);
+  // Aggressive wrapper mitigating partial file-lock read failures halting entire plugin execution hooks cleanly.
+  try {
+    for await (const line of rl) {
+      const tMatch = line.match(tRegex);
+      if (tMatch) {
+        currentT = parseInt(tMatch[1], 16);
+        if (tMatch[2]) {
+          currentC = parseInt(tMatch[2], 16);
+        }
       }
-    }
 
     let changed = false;
     let currentExc: number | null = null;
@@ -252,18 +255,24 @@ export async function parseLogFile(filePath: string): Promise<ParseResult> {
         raw: line
       });
 
-      // Reset transients
-      currentExc = null;
-      currentTlbType = null;
-      currentTlbDetails = null;
-      currentIoType = null;
-      currentIoDevice = null;
-      currentIoDetails = null;
-      currentFuncAddr = null;
-      currentFuncSp = null;
-      currentFuncArgs = null;
-      currentFuncRet = null;
+        // Reset transient instruction parameters allowing next line loops seamlessly
+        currentExc = null;
+        currentTlbType = null;
+        currentTlbDetails = null;
+        currentIoType = null;
+        currentIoDevice = null;
+        currentIoDetails = null;
+        currentFuncAddr = null;
+        currentFuncSp = null;
+        currentFuncArgs = null;
+        currentFuncRet = null;
+      }
     }
+  } catch (ioErr: any) {
+    console.error("Non-fatal read threshold interrupted: ", ioErr);
+  } finally {
+    // Rigidly terminate hanging read descriptors aggressively dropping lock faults natively.
+    fileStream.destroy();
   }
 
   return { dataPoints, elfPath: currentElfPath, memoryRegions: parsedRegions, sramTopologies: parsedSramTopologies };

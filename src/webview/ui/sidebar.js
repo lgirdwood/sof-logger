@@ -1,5 +1,8 @@
+        // Dynamically iterates over sequential execution logs to synthetically map
+        // nested call depths directly into a visual dropdown DOM tree strictly capped iteratively.
         function renderSidebar() {
-          const sidebar = document.getElementById('tree-sidebar');
+          try {
+            const sidebar = document.getElementById('tree-sidebar');
           if (!sidebar) return;
           const root = document.createElement('div');
           
@@ -90,6 +93,9 @@
             }
           }
           sidebar.appendChild(root);
+          } catch (sidebarErr) {
+            console.error("Failed scaling DOM nested UI explicitly natively", sidebarErr);
+          }
         }
 
         // Initialize Call-Stack sidebar automatically

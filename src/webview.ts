@@ -6,16 +6,26 @@ export function getWebviewContent(extensionPath: string) {
     const cssPath = path.join(extensionPath, 'src', 'webview', 'ui', 'style.css');
     const uiDir = path.join(extensionPath, 'src', 'webview', 'ui');
     
-    // Natively read out separated physical components statically avoiding monolithic strings
-    const htmlBody = fs.existsSync(layoutPath) ? fs.readFileSync(layoutPath, 'utf8') : '<h1>Layout Missing</h1>';
-    const cssBody = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : '';
-    
-    const jsGlobals = fs.existsSync(path.join(uiDir, 'globals.js')) ? fs.readFileSync(path.join(uiDir, 'globals.js'), 'utf8') : '';
-    const jsToggles = fs.existsSync(path.join(uiDir, 'toggles.js')) ? fs.readFileSync(path.join(uiDir, 'toggles.js'), 'utf8') : '';
-    const jsChart = fs.existsSync(path.join(uiDir, 'chart.js')) ? fs.readFileSync(path.join(uiDir, 'chart.js'), 'utf8') : '';
-    const jsSidebar = fs.existsSync(path.join(uiDir, 'sidebar.js')) ? fs.readFileSync(path.join(uiDir, 'sidebar.js'), 'utf8') : '';
-    const jsMemMap = fs.existsSync(path.join(uiDir, 'memoryMap.js')) ? fs.readFileSync(path.join(uiDir, 'memoryMap.js'), 'utf8') : '';
-    const jsBody = [jsGlobals, jsToggles, jsChart, jsSidebar, jsMemMap].join('\n\n');
+    let htmlBody = '<h1>Layout Missing</h1>';
+    let cssBody = '';
+    let jsBody = '';
+
+    // Aggressive error boundary wrapper ensuring standard execution layout natively 
+    // survives arbitrary IO/locking crashes dynamically rendering standard errors.
+    try {
+        htmlBody = fs.existsSync(layoutPath) ? fs.readFileSync(layoutPath, 'utf8') : htmlBody;
+        cssBody = fs.existsSync(cssPath) ? fs.readFileSync(cssPath, 'utf8') : cssBody;
+        
+        const jsGlobals = fs.existsSync(path.join(uiDir, 'globals.js')) ? fs.readFileSync(path.join(uiDir, 'globals.js'), 'utf8') : '';
+        const jsToggles = fs.existsSync(path.join(uiDir, 'toggles.js')) ? fs.readFileSync(path.join(uiDir, 'toggles.js'), 'utf8') : '';
+        const jsChart = fs.existsSync(path.join(uiDir, 'chart.js')) ? fs.readFileSync(path.join(uiDir, 'chart.js'), 'utf8') : '';
+        const jsSidebar = fs.existsSync(path.join(uiDir, 'sidebar.js')) ? fs.readFileSync(path.join(uiDir, 'sidebar.js'), 'utf8') : '';
+        const jsMemMap = fs.existsSync(path.join(uiDir, 'memoryMap.js')) ? fs.readFileSync(path.join(uiDir, 'memoryMap.js'), 'utf8') : '';
+        jsBody = [jsGlobals, jsToggles, jsChart, jsSidebar, jsMemMap].join('\n\n');
+    } catch (fsErr: any) {
+        htmlBody = `<h1 style="color:red">Fatal Webview Generation IO Exception</h1><pre style="color:red;white-space:pre-wrap;">${fsErr.message}</pre>`;
+        console.error('Failed fetching UI component layouts dynamically:', fsErr);
+    }
 
     return `<!DOCTYPE html>
 <html lang="en">
