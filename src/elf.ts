@@ -1,9 +1,45 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as cp from 'child_process';
+import * as fs from 'fs';
+import { MemoryRegion } from './parser';
 
+export function parseZephyrMap(elfPath: string): MemoryRegion[] {
+  const mapPath = elfPath.replace(/\.elf$/, '.map');
+  if (!fs.existsSync(mapPath)) return [];
+  
+  const regions: MemoryRegion[] = [];
+  try {
+    const data = fs.readFileSync(mapPath, 'utf8');
+    const configIdx = data.indexOf('Memory Configuration');
+    if (configIdx === -1) return [];
+    
+    // Extrapolate map layout structural blocks
+    const lines = data.substring(configIdx).split('\n');
+    let reading = false;
+    for (const line of lines) {
+        if (line.includes('Name') && line.includes('Origin') && line.includes('Length')) {
+            reading = true;
+            continue;
+        }
+        if (!reading) continue;
+        if (line.trim() === '') break; // Ends on the very first blank line following Memory Configuration boundaries securely
+        
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 3) {
+            const rName = parts[0];
+            const start = parseInt(parts[1], 16);
+            const size = parseInt(parts[2], 16);
+            if (!isNaN(start) && !isNaN(size) && size > 0) {
+                regions.push({ name: rName, start: start, end: start + size });
+            }
+        }
+    }
+  } catch(e) {
+  }
+  return regions;
+}
 /**
- * Asynchronously reads and decodes the ELF binary structure mapping virtual functions.
  * Executes the `nm` subsystem to extract detailed structural sizes matching execution offsets.
  */
 export async function resolveElfSymbols(

@@ -3,7 +3,7 @@ import { IncrementalLogParser, MemoryRegion, SramTopology } from './parser';
 import { getWebviewContent } from './webview';
 import * as fs from 'fs';
 import * as path from 'path';
-import { resolveElfSymbols, applyElfSymbols } from './elf';
+import { resolveElfSymbols, applyElfSymbols, parseZephyrMap } from './elf';
 import { TraceTreeProvider } from './providers/TraceTreeProvider';
 import { MemoryTreeProvider } from './providers/MemoryTreeProvider';
 
@@ -176,6 +176,7 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 getOrSpawnTerminals();
                 const targetBuildDir = resolveVSCodeVars(config.get<string>('targetBuildDir'));
                 const kernelArg = targetBuildDir ? ` -kernel ${path.join(targetBuildDir, 'zephyr', 'zephyr.ri')}` : '';
+                const targetElfPath = targetBuildDir ? path.join(targetBuildDir, 'zephyr', 'zephyr.elf') : '';
                 const baseQemuPath = resolveVSCodeVars(config.get<string>('qemuPath', 'qemu-system-xtensa'));
                 
                 const cmd = baseQemuPath 
@@ -221,7 +222,9 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                                currentPanelMem.webview.postMessage({
                                    command: 'updateSymbols',
                                    logData: globalLogData,
-                                   symbols: globalSymbols
+                                   symbols: globalSymbols,
+                                   regionsMeta: parseResult.memoryRegions && parseResult.memoryRegions.length > 0 ? parseResult.memoryRegions : (targetElfPath ? parseZephyrMap(targetElfPath) : []),
+                                   sramTopologies: parseResult.sramTopologies || []
                                });
                            }
                         } catch(e) {}
@@ -369,10 +372,11 @@ export function activate(context: vscode.ExtensionContext) {
       const handleReady = async (message: any, webviewPanel: vscode.WebviewPanel, isChart: boolean) => {
         if (message.command === 'ready') {
              getSymbols().then(syms => {
+               const mapRegions = targetElfPath ? parseZephyrMap(targetElfPath) : [];
                if (isChart) {
-                  webviewPanel.webview.postMessage({ command: 'loadData', logData: [], symbols: syms, regionsMeta: [], sramTopologies: [] });
+                  webviewPanel.webview.postMessage({ command: 'loadData', logData: [], symbols: syms, regionsMeta: mapRegions, sramTopologies: [] });
                } else {
-                  webviewPanel.webview.postMessage({ command: 'updateSymbols', logData: [], symbols: syms });
+                  webviewPanel.webview.postMessage({ command: 'updateSymbols', logData: [], symbols: syms, regionsMeta: mapRegions, sramTopologies: [] });
                }
              });
          }
