@@ -335,11 +335,13 @@ export function activate(context: vscode.ExtensionContext) {
 
   const disposable = vscode.commands.registerCommand('sof-logger.visualize', async () => {
     
-    if (currentPanelChart && currentPanelMem) {
-        currentPanelChart.reveal(vscode.ViewColumn.One);
-        currentPanelMem.reveal(vscode.ViewColumn.Two);
-        return;
+    if (currentPanelChart) {
+        try { currentPanelChart.reveal(vscode.ViewColumn.One); } catch(e) { currentPanelChart = undefined; }
     }
+    if (currentPanelMem) {
+        try { currentPanelMem.reveal(vscode.ViewColumn.Two); } catch(e) { currentPanelMem = undefined; }
+    }
+    if (currentPanelChart && currentPanelMem) return;
     
     const config = vscode.workspace.getConfiguration('sofLogger');
     const logFilePath = config.get<string>('qemuLogFile', '/tmp/qemu-exec-default.log');
@@ -348,34 +350,33 @@ export function activate(context: vscode.ExtensionContext) {
     const logData: any[] = [];
     traceProvider.refresh(logData);
 
-    const panelChart = vscode.window.createWebviewPanel(
-        'sofLoggerVisualizer',
-        'SOF Execution Chart',
-        vscode.ViewColumn.One,
-        {
-          enableScripts: true,
-          retainContextWhenHidden: true
-        }
-    );
-    currentPanelChart = panelChart;
+    if (!currentPanelChart) {
+        const panelChart = vscode.window.createWebviewPanel(
+            'sofLoggerVisualizer', 'SOF Execution Chart', vscode.ViewColumn.One,
+            { enableScripts: true, retainContextWhenHidden: true }
+        );
+        panelChart.onDidDispose(() => currentPanelChart = undefined, undefined, context.subscriptions);
+        currentPanelChart = panelChart;
+        panelChart.webview.html = getWebviewContent(context.extensionPath, 'chart');
+        panelChart.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
+        panelChart.webview.onDidReceiveMessage(m => handleReady(m, panelChart, true), undefined, context.subscriptions);
+    }
       
-    const panelMem = vscode.window.createWebviewPanel(
-        'sofLoggerMemoryMap',
-        'SOF Memory Map',
-        vscode.ViewColumn.Two,
-        {
-          enableScripts: true,
-          retainContextWhenHidden: true
-        }
-    );
-    currentPanelMem = panelMem;
+    if (!currentPanelMem) {
+        const panelMem = vscode.window.createWebviewPanel(
+            'sofLoggerMemoryMap', 'SOF Memory Map', vscode.ViewColumn.Two,
+            { enableScripts: true, retainContextWhenHidden: true }
+        );
+        panelMem.onDidDispose(() => currentPanelMem = undefined, undefined, context.subscriptions);
+        currentPanelMem = panelMem;
+        panelMem.webview.html = getWebviewContent(context.extensionPath, 'memory');
+        panelMem.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
+        panelMem.webview.onDidReceiveMessage(m => handleReady(m, panelMem, false), undefined, context.subscriptions);
+    }
 
     // Pump the TraceTree natively efficiently bypassing UI block limits completely natively
     traceProvider.refresh(logData);
     memoryProvider.refresh(logData, [], [], []);
-
-    panelChart.webview.html = getWebviewContent(context.extensionPath, 'chart');
-    panelMem.webview.html = getWebviewContent(context.extensionPath, 'memory');
 
     const targetBuildDir = resolveVSCodeVars(config.get<string>('targetBuildDir'));
     let targetElfPath = targetBuildDir ? path.join(targetBuildDir, 'zephyr', 'zephyr.elf') : '';
@@ -407,10 +408,6 @@ export function activate(context: vscode.ExtensionContext) {
           }
          }
       }
-
-      panelChart.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
-      panelMem.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
-      
       const handleReady = async (message: any, webviewPanel: vscode.WebviewPanel, isChart: boolean) => {
         if (message.command === 'ready') {
              getSymbols().then(syms => {
@@ -426,8 +423,6 @@ export function activate(context: vscode.ExtensionContext) {
          }
       };
 
-      panelChart.webview.onDidReceiveMessage(m => handleReady(m, panelChart, true), undefined, context.subscriptions);
-      panelMem.webview.onDidReceiveMessage(m => handleReady(m, panelMem, false), undefined, context.subscriptions);
   });
 
   context.subscriptions.push(disposable);
