@@ -16,9 +16,13 @@
       <div id="loadingOverlay" style="position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); display: flex; justify-content: center; align-items: center; z-index: 9999; font-size: 24px;">
         Awaiting QEMU trace data...
       </div>
-      <div class="main-layout" id="mainLayout" style="display: flex;">
-        <div class="chart-container">
+      <div class="main-layout" id="mainLayout" style="display: flex; flex-direction: column;">
+        <div class="chart-container" style="flex-grow: 1; min-height: 0;">
           <canvas id="logChart"></canvas>
+        </div>
+        <div class="slider-container" id="sliderContainer" style="padding: 10px; display: flex; align-items: center; gap: 10px; background: var(--vscode-editor-background); border-top: 1px solid var(--vscode-panel-border);">
+          <input type="range" id="traceSlider" min="0" max="1000" value="1000" style="flex-grow: 1;">
+          <span id="traceSliderLabel" style="font-family: monospace; font-size: 12px; min-width: 60px; text-align: right;">Live</span>
         </div>
       </div>
       <div class="memory-map-layout" id="memoryMapLayout" style="height: 100%; width: 100%; display: none;">

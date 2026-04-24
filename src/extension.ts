@@ -226,7 +226,7 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 }, 1000);
             } else if (message.command === 'qemuStop') {
                 if (qemuTerminal && qemuTerminal.exitStatus === undefined) {
-                     qemuTerminal.sendText('\x03'); // Send Ctrl+C via ANSI magically!
+                     qemuTerminal.sendText('\x15quit');
                 }
                 if (pollingInterval) {
                      clearInterval(pollingInterval);

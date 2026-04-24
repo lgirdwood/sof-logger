@@ -188,8 +188,17 @@
                  const zoomWidth = xScales.max - xScales.min;
                  const endX = cDeltaData[cDeltaData.length - 1].x;
                  
-                 xScales.max = Math.max(zoomWidth, endX);
-                 xScales.min = xScales.max - zoomWidth;
+                 let targetMax = endX;
+                 window.userIsScrubbing = window.userIsScrubbing || false;
+                 if (window.userIsScrubbing) {
+                     targetMax = Math.max(zoomWidth, (window.globalScrubRatio || 1.0) * endX);
+                 } else {
+                     const slider = document.getElementById('traceSlider');
+                     if (slider) slider.value = 1000;
+                 }
+                 
+                 xScales.max = targetMax;
+                 xScales.min = targetMax - zoomWidth;
               }
               
               window.myChart.update('none');
@@ -420,3 +429,28 @@
           console.error("Fatal failure initializing executing graph bounds explicitly:", chartErr);
         }
         } // End of initChartAndUI
+
+window.userIsScrubbing = false;
+window.globalScrubRatio = 1.0;
+
+document.getElementById('traceSlider')?.addEventListener('input', (e) => {
+    window.userIsScrubbing = true;
+    window.globalScrubRatio = parseInt(e.target.value, 10) / 1000.0;
+    
+    if (window.globalScrubRatio === 1.0) {
+        window.userIsScrubbing = false;
+    }
+    
+    if (window.myChart && window.globalTraceData && window.globalTraceData.length > 0) {
+        const xScales = window.myChart.options.scales.x;
+        const zoomWidth = xScales.max - xScales.min;
+        const endX = window.globalTraceData[window.globalTraceData.length - 1].x;
+        
+        let targetMax = window.globalScrubRatio * endX;
+        targetMax = Math.max(zoomWidth, targetMax);
+        
+        xScales.max = targetMax;
+        xScales.min = xScales.max - zoomWidth;
+        window.myChart.update('none');
+    }
+});
