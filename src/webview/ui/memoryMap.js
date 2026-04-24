@@ -630,7 +630,46 @@
                   
                   const vrt = (pg + pgAttr.vaddr) >>> 0;
                   const attrDesc = attrTitles[attrHex] ? ' (' + attrTitles[attrHex] + ')' : '';
-                  const titleStr = 'Page (P): 0x' + pg.toString(16).toUpperCase() + '\nPage (V): ' + (pgAttr.vaddr !== 0 ? '0x' + vrt.toString(16).toUpperCase() : 'P==V') + '\nASID: ' + pgAttr.asid + '\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\nRing: ' + r : '');
+                  let titleStr = 'Page (P): 0x' + pg.toString(16).toUpperCase() + '\nPage (V): ' + (pgAttr.vaddr !== 0 ? '0x' + vrt.toString(16).toUpperCase() : 'P==V') + '\nASID: ' + pgAttr.asid + '\nAttr: ' + pgAttr.attr + attrDesc + (r !== '?' ? '\nRing: ' + r : '');
+                  
+                  let historyLog = '\n\n--- TLB History ---';
+                  let changeCount = 0;
+                  let currRing = '0';
+                  let currAsid = '0x0';
+                  let currAttr = '0x0';
+                  let currVaddr = 0;
+                  
+                  for (let i = 0; i < tlbRanges.length; i++) {
+                      if (pg >= tlbRanges[i].start && pg < tlbRanges[i].end) {
+                          const t = tlbRanges[i].attr;
+                          let changed = false;
+                          let stepStr = '[' + (changeCount+1) + '] ';
+                          
+                          const nextRing = t.ring !== undefined ? t.ring : currRing;
+                          const nextAsid = t.asid !== undefined ? t.asid : currAsid;
+                          const nextAttr = t.attr !== undefined ? t.attr : currAttr;
+                          const nextVaddr = t.vaddr !== undefined ? t.vaddr : currVaddr;
+                          
+                          if (nextRing !== currRing) { stepStr += 'Ring:' + currRing + '->' + nextRing + ' '; currRing = nextRing; changed = true; }
+                          if (nextAsid !== currAsid) { stepStr += 'ASID:' + currAsid + '->' + nextAsid + ' '; currAsid = nextAsid; changed = true; }
+                          if (nextAttr !== currAttr) { stepStr += 'Attr:' + currAttr + '->' + nextAttr + ' '; currAttr = nextAttr; changed = true; }
+                          if (nextVaddr !== currVaddr) {
+                              const currHex = (pg + currVaddr) >>> 0;
+                              const nextHex = (pg + nextVaddr) >>> 0;
+                              stepStr += 'VAddr:0x' + currHex.toString(16).toUpperCase() + '->0x' + nextHex.toString(16).toUpperCase() + ' '; 
+                              currVaddr = nextVaddr; 
+                              changed = true; 
+                          }
+                          
+                          if (changed) {
+                              historyLog += '\n' + stepStr.trim();
+                              changeCount++;
+                          }
+                      }
+                  }
+                  if (changeCount === 0) historyLog += '\n(No changes from base state)';
+                  titleStr += historyLog;
+
                   rDiv.title = titleStr;
                   aDiv.title = titleStr;
                   atDiv.title = titleStr;
