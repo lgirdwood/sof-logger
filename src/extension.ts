@@ -137,7 +137,6 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 <div class="btn-group">
                     <button id="btnClear" class="vscode-button vscode-button--secondary" title="Clear Traces & Reload Maps">Reset Models</button>
                     <button id="btnPause" class="vscode-button vscode-button--secondary" title="Pause Stream" disabled>Pause Logs</button>
-                    <button id="btnSettings" class="vscode-button vscode-button--secondary" title="Configure QEMU Args & Paths" style="padding: 4px; min-width: 32px">⚙️</button>
                 </div>
                 <script>
                     const vscode = acquireVsCodeApi();
@@ -155,7 +154,6 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                         btnPause.textContent = paused ? 'Unpause Logs' : 'Pause Logs';
                         vscode.postMessage({ command: 'togglePause', state: paused });
                     });
-                    document.getElementById('btnSettings').addEventListener('click', () => vscode.postMessage({ command: 'openSettings' }));
                     
                     window.addEventListener('message', event => {
                         const message = event.data;
@@ -294,8 +292,6 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                      currentPanelChart.webview.postMessage({ command: 'qemuState', state: isLogPaused ? 'Paused' : 'Running' });
                 }
                 vscode.window.showInformationMessage(message.state ? 'Log collection paused' : 'Log collection resumed');
-            } else if (message.command === 'openSettings') {
-                vscode.commands.executeCommand('workbench.action.openSettings', '@ext:thesofproject.sof-logger');
             }
         });
     }
@@ -307,6 +303,16 @@ export function activate(context: vscode.ExtensionContext) {
   vscode.window.registerWebviewViewProvider('sofSearchView', new SearchPanelProvider(context.extensionUri));
   vscode.window.registerTreeDataProvider('sofTraceView', traceProvider);
   vscode.window.registerTreeDataProvider('sofMemoryView', memoryProvider);
+
+  context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openChart', () => {
+    vscode.commands.executeCommand('sof-logger.visualize', 'chart');
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openMemory', () => {
+    vscode.commands.executeCommand('sof-logger.visualize', 'memory');
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openSettings', () => {
+    vscode.commands.executeCommand('workbench.action.openSettings', '@ext:thesofproject.sof-logger');
+  }));
 
   context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openResource', (file: string, line: number, startT: number, endT?: number) => {
     if (file && fs.existsSync(file)) {
@@ -333,15 +339,27 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }));
 
-  const disposable = vscode.commands.registerCommand('sof-logger.visualize', async () => {
+  const disposable = vscode.commands.registerCommand('sof-logger.visualize', async (targetView?: 'chart' | 'memory') => {
     
     if (currentPanelChart) {
-        try { currentPanelChart.reveal(vscode.ViewColumn.One); } catch(e) { currentPanelChart = undefined; }
+        try { 
+            if (targetView === 'chart' || !targetView) {
+                currentPanelChart.reveal(vscode.ViewColumn.One); 
+            }
+        } catch(e) { currentPanelChart = undefined; }
     }
     if (currentPanelMem) {
-        try { currentPanelMem.reveal(vscode.ViewColumn.Two); } catch(e) { currentPanelMem = undefined; }
+        try { 
+            if (targetView === 'memory' || !targetView) {
+                currentPanelMem.reveal(vscode.ViewColumn.Two); 
+            }
+        } catch(e) { currentPanelMem = undefined; }
     }
-    if (currentPanelChart && currentPanelMem) return;
+    
+    // If we only requested one and it's already open, we can just return
+    if (targetView === 'chart' && currentPanelChart) return;
+    if (targetView === 'memory' && currentPanelMem) return;
+    if (!targetView && currentPanelChart && currentPanelMem) return;
     
     const config = vscode.workspace.getConfiguration('sofLogger');
     const logFilePath = config.get<string>('qemuLogFile', '/tmp/qemu-exec-default.log');
@@ -350,7 +368,7 @@ export function activate(context: vscode.ExtensionContext) {
     const logData: any[] = [];
     traceProvider.refresh(logData);
 
-    if (!currentPanelChart) {
+    if (!currentPanelChart && (targetView === 'chart' || !targetView)) {
         const panelChart = vscode.window.createWebviewPanel(
             'sofLoggerVisualizer', 'SOF Execution Chart', vscode.ViewColumn.One,
             { enableScripts: true, retainContextWhenHidden: true }
@@ -362,7 +380,7 @@ export function activate(context: vscode.ExtensionContext) {
         panelChart.webview.onDidReceiveMessage(m => handleReady(m, panelChart, true), undefined, context.subscriptions);
     }
       
-    if (!currentPanelMem) {
+    if (!currentPanelMem && (targetView === 'memory' || !targetView)) {
         const panelMem = vscode.window.createWebviewPanel(
             'sofLoggerMemoryMap', 'SOF Memory Map', vscode.ViewColumn.Two,
             { enableScripts: true, retainContextWhenHidden: true }

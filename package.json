@@ -21,8 +21,42 @@
       {
         "command": "sof-logger.visualize",
         "title": "SOF Logger: Visualize QEMU Log"
+      },
+      {
+        "command": "sof-logger.openChart",
+        "title": "Open Execution Chart",
+        "icon": "$(graph-line)"
+      },
+      {
+        "command": "sof-logger.openMemory",
+        "title": "Open Memory Map",
+        "icon": "$(circuit-board)"
+      },
+      {
+        "command": "sof-logger.openSettings",
+        "title": "Configure SOF Logger",
+        "icon": "$(settings-gear)"
       }
     ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "sof-logger.openChart",
+          "when": "view == sofSearchView",
+          "group": "navigation@1"
+        },
+        {
+          "command": "sof-logger.openMemory",
+          "when": "view == sofSearchView",
+          "group": "navigation@2"
+        },
+        {
+          "command": "sof-logger.openSettings",
+          "when": "view == sofSearchView",
+          "group": "navigation@3"
+        }
+      ]
+    },
     "viewsContainers": {
       "activitybar": [
         {
