@@ -133,7 +133,7 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 </div>
                 <div class="btn-group">
                     <button id="btnClear" class="vscode-button vscode-button--secondary" title="Clear Traces & Reload Maps">Reset Models</button>
-                    <button id="btnPause" class="vscode-button vscode-button--secondary" title="Pause Stream">Pause Logs</button>
+                    <button id="btnPause" class="vscode-button vscode-button--secondary" title="Pause Stream" disabled>Pause Logs</button>
                     <button id="btnSettings" class="vscode-button vscode-button--secondary" title="Configure QEMU Args & Paths" style="padding: 4px; min-width: 32px">⚙️</button>
                 </div>
                 <script>
@@ -153,6 +153,18 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                         vscode.postMessage({ command: 'togglePause', state: paused });
                     });
                     document.getElementById('btnSettings').addEventListener('click', () => vscode.postMessage({ command: 'openSettings' }));
+                    
+                    window.addEventListener('message', event => {
+                        const message = event.data;
+                        if (message.command === 'qemuState') {
+                            const isRunning = message.state === 'Running';
+                            btnPause.disabled = (message.state === 'Stopped');
+                            if (message.state === 'Stopped') {
+                                paused = false;
+                                btnPause.textContent = 'Pause Logs';
+                            }
+                        }
+                    });
                 </script>
             </body>
             </html>
@@ -197,7 +209,8 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 if (currentPanelChart) {
                     currentPanelChart.webview.postMessage({ command: 'qemuState', state: 'Running' });
                 }
-
+                webviewView.webview.postMessage({ command: 'qemuState', state: 'Running' });
+                
                 pollingInterval = setInterval(async () => {
                     if (isLogPaused || !logParser) return;
                     if (fs.existsSync(logFilePath)) {
@@ -247,6 +260,7 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 if (currentPanelChart) {
                      currentPanelChart.webview.postMessage({ command: 'qemuState', state: 'Stopped' });
                 }
+                webviewView.webview.postMessage({ command: 'qemuState', state: 'Stopped' });
                 vscode.window.showInformationMessage('Sent Stop signal to QEMU terminal!');
             } else if (message.command === 'clearLogs') {
                 const config = vscode.workspace.getConfiguration('sofLogger');
