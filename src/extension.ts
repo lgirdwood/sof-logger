@@ -191,6 +191,9 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 if (logParser) logParser.close();
                 globalLogData = [];
                 logParser = new IncrementalLogParser(logFilePath);
+                if (currentPanelChart) {
+                    currentPanelChart.webview.postMessage({ command: 'qemuState', state: 'Running' });
+                }
 
                 pollingInterval = setInterval(async () => {
                     if (isLogPaused || !logParser) return;
@@ -236,6 +239,9 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                      logParser.close();
                      logParser = null;
                 }
+                if (currentPanelChart) {
+                     currentPanelChart.webview.postMessage({ command: 'qemuState', state: 'Stopped' });
+                }
                 vscode.window.showInformationMessage('Sent Stop signal to QEMU terminal!');
             } else if (message.command === 'clearLogs') {
                 vscode.window.showInformationMessage('SOF traces and UI models cleared.');
@@ -243,6 +249,9 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 traceProvider.refresh([]);
             } else if (message.command === 'togglePause') {
                 isLogPaused = message.state;
+                if (currentPanelChart) {
+                     currentPanelChart.webview.postMessage({ command: 'qemuState', state: isLogPaused ? 'Paused' : 'Running' });
+                }
                 vscode.window.showInformationMessage(message.state ? 'Log collection paused' : 'Log collection resumed');
             } else if (message.command === 'openSettings') {
                 vscode.commands.executeCommand('workbench.action.openSettings', '@ext:thesofproject.sof-logger');

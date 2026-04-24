@@ -199,6 +199,10 @@
                  
                  xScales.max = targetMax;
                  xScales.min = targetMax - zoomWidth;
+                 
+                 if (typeof window.updateSliderLabel === 'function') {
+                     window.updateSliderLabel();
+                 }
               }
               
               window.myChart.update('none');
@@ -428,23 +432,31 @@
         } catch (chartErr) {
           console.error("Fatal failure initializing executing graph bounds explicitly:", chartErr);
         }
+        
+        if (typeof window.updateSliderLabel === 'function') {
+            window.updateSliderLabel();
+        }
+        
         } // End of initChartAndUI
 
 window.userIsScrubbing = false;
 window.globalScrubRatio = 1.0;
 
-document.getElementById('traceSlider')?.addEventListener('input', (e) => {
-    window.userIsScrubbing = true;
-    window.globalScrubRatio = parseInt(e.target.value, 10) / 1000.0;
+const traceSlider = document.getElementById('traceSlider');
+if (traceSlider) {
+    traceSlider.addEventListener('input', (e) => {
+        window.userIsScrubbing = true;
+        window.globalScrubRatio = parseInt(e.target.value, 10) / 1000.0;
     
     if (window.globalScrubRatio === 1.0) {
         window.userIsScrubbing = false;
     }
     
-    if (window.myChart && window.globalTraceData && window.globalTraceData.length > 0) {
+    if (window.myChart && window.myChart.data.datasets[0].data.length > 0) {
         const xScales = window.myChart.options.scales.x;
         const zoomWidth = xScales.max - xScales.min;
-        const endX = window.globalTraceData[window.globalTraceData.length - 1].x;
+        const dataset = window.myChart.data.datasets[0].data;
+        const endX = dataset[dataset.length - 1].x;
         
         let targetMax = window.globalScrubRatio * endX;
         targetMax = Math.max(zoomWidth, targetMax);
@@ -452,5 +464,21 @@ document.getElementById('traceSlider')?.addEventListener('input', (e) => {
         xScales.max = targetMax;
         xScales.min = xScales.max - zoomWidth;
         window.myChart.update('none');
+        
+        if (typeof window.updateSliderLabel === 'function') {
+            window.updateSliderLabel();
+        }
     }
-});
+    });
+}
+
+window.qemuStatus = window.qemuStatus || 'Live';
+window.updateSliderLabel = function() {
+    const label = document.getElementById('traceSliderLabel');
+    if (!label) return;
+    let baseTime = 0;
+    if (window.myChart && window.myChart.options && window.myChart.options.scales && window.myChart.options.scales.x) {
+        baseTime = window.myChart.options.scales.x.max || 0;
+    }
+    label.innerText = `[${baseTime.toFixed(3)}s] ${window.userIsScrubbing ? 'Scrubbing...' : window.qemuStatus}`;
+};

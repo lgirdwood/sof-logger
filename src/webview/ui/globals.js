@@ -85,6 +85,11 @@ const vscode = acquireVsCodeApi();
                     window.myChart.options.scales.x.max = endX + padding;
                     window.myChart.update();
                 }
+            } else if (message.command === 'qemuState') {
+                window.qemuStatus = message.state;
+                if (typeof window.updateSliderLabel === 'function') {
+                    window.updateSliderLabel();
+                }
             }
         });
         function switchView(viewName) {
