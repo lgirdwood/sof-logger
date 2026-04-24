@@ -53,6 +53,9 @@ const vscode = acquireVsCodeApi();
                 try {
                     logData = message.logData || logData;
                     symbolsData = message.symbols || [];
+                    if (message.regionsMeta) regionsMeta = message.regionsMeta;
+                    if (message.sramTopologies) sramTopologies = message.sramTopologies;
+                    
                     const ovMem = document.getElementById('loadingOverlay');
                     if (ovMem) ovMem.style.display = 'none';
                     

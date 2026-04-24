@@ -30,7 +30,7 @@ export function parseZephyrMap(elfPath: string): MemoryRegion[] {
             const rName = parts[0];
             const start = parseInt(parts[1], 16);
             const size = parseInt(parts[2], 16);
-            if (!isNaN(start) && !isNaN(size) && size > 0) {
+            if (!isNaN(start) && !isNaN(size) && size > 0 && rName !== '*default*') {
                 regions.push({ name: rName, start: start, end: start + size });
             }
         }

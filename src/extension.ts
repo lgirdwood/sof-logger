@@ -373,6 +373,8 @@ export function activate(context: vscode.ExtensionContext) {
         if (message.command === 'ready') {
              getSymbols().then(syms => {
                const mapRegions = targetElfPath ? parseZephyrMap(targetElfPath) : [];
+               memoryProvider.refresh(logData, syms, mapRegions, []);
+               
                if (isChart) {
                   webviewPanel.webview.postMessage({ command: 'loadData', logData: [], symbols: syms, regionsMeta: mapRegions, sramTopologies: [] });
                } else {

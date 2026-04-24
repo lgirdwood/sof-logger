@@ -190,25 +190,51 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
         }
 
         // 2. Static Segment Allocations
-        const staticGroups: { [key: string]: any[] } = { 'text': [], 'data': [], 'rodata': [], 'bss': [] };
         const seenStatic = new Set();
+        
+        // 3. Topology Regions Mapping (SRAM block matching)
+        const regionGroups: { [key: string]: any[] } = {};
+        if (sramTopologies && sramTopologies.length > 0) {
+           sramTopologies.forEach(t => regionGroups[t.name] = []);
+        } else if (regionsMeta && regionsMeta.length > 0) {
+           regionsMeta.forEach(r => regionGroups[r.name] = []);
+        } else {
+             // Fallback exactly like old grouping!
+             regionGroups['HPSRAM'] = [];
+             regionGroups['LPSRAM'] = [];
+             regionGroups['IMR'] = [];
+        }
+
         symbols.forEach(sym => {
-           if (sym.sect && staticGroups[sym.sect] && sym.size > 0 && !seenStatic.has(sym.name)) {
-              seenStatic.add(sym.name);
-              staticGroups[sym.sect].push(sym);
+           if ((!sym.sect || !sym.sect.startsWith('heap')) && sym.size > 0 && !seenStatic.has(sym.name)) {
+               let rName = '';
+               // NOTE: We MUST natively honor structural memory layouts injected into provider globally!
+               if (regionsMeta && regionsMeta.length > 0) {
+                   const matched = regionsMeta.find(r => sym.addr >= r.start && sym.addr < r.end);
+                   if (matched) rName = matched.name;
+               } else {
+                   const prefix = sym.addr >>> 20; 
+                   if (prefix === 0xA00) rName = 'HPSRAM';
+                   else if (prefix === 0xA01 || prefix === 0xA10) rName = 'LPSRAM';
+                   else rName = 'IMR';
+               }
+               
+               if (rName && regionGroups[rName]) {
+                  seenStatic.add(sym.name);
+                  regionGroups[rName].push(sym);
+               }
            }
         });
         
-        ['text', 'data', 'rodata', 'bss'].forEach(sName => {
-           if (staticGroups[sName].length === 0) return;
-           
-           const children = staticGroups[sName].sort((a: any, b: any) => a.addr - b.addr).map((sym: any) => {
+        Object.keys(regionGroups).forEach(gName => {
+           if (regionGroups[gName].length === 0) return;
+           const children = regionGroups[gName].sort((a: any, b: any) => a.addr - b.addr).map((sym: any) => {
                const details = `Size: ${sym.size} B`;
                const displayLabel = `[0x${sym.addr.toString(16).toUpperCase()}] ${sym.name}`;
-               return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `static_${sym.addr}_${sym.name}`);
+               return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `seg_${sym.addr}_${sym.name}`);
            });
            
-           this.rootItems.push(new MemoryItem(`Static .${sName} (${staticGroups[sName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children, `root_static_${sName}`));
+           this.rootItems.push(new MemoryItem(`${gName} Segment (${regionGroups[gName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children, `root_seg_${gName}`));
         });
 
         this._onDidChangeTreeData.fire();
