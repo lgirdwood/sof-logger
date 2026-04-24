@@ -132,7 +132,7 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                     <button id="btnStop" class="vscode-button">Stop QEMU</button>
                 </div>
                 <div class="btn-group">
-                    <button id="btnClear" class="vscode-button vscode-button--secondary" title="Clear Traces">Clear Logs</button>
+                    <button id="btnClear" class="vscode-button vscode-button--secondary" title="Clear Traces & Reload Maps">Reset Models</button>
                     <button id="btnPause" class="vscode-button vscode-button--secondary" title="Pause Stream">Pause Logs</button>
                     <button id="btnSettings" class="vscode-button vscode-button--secondary" title="Configure QEMU Args & Paths" style="padding: 4px; min-width: 32px">⚙️</button>
                 </div>
@@ -191,6 +191,8 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 if (pollingInterval) clearInterval(pollingInterval);
                 if (logParser) logParser.close();
                 globalLogData = [];
+                memoryProvider.clear();
+                traceProvider.clear();
                 logParser = new IncrementalLogParser(logFilePath);
                 if (currentPanelChart) {
                     currentPanelChart.webview.postMessage({ command: 'qemuState', state: 'Running' });
@@ -247,9 +249,28 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 }
                 vscode.window.showInformationMessage('Sent Stop signal to QEMU terminal!');
             } else if (message.command === 'clearLogs') {
-                vscode.window.showInformationMessage('SOF traces and UI models cleared.');
-                memoryProvider.refresh([], [], [], []);
-                traceProvider.refresh([]);
+                const config = vscode.workspace.getConfiguration('sofLogger');
+                const targetBuildDir = resolveVSCodeVars(config.get<string>('targetBuildDir'));
+                const targetElfPath = targetBuildDir ? path.join(targetBuildDir, 'zephyr', 'zephyr.elf') : '';
+                
+                globalLogData = [];
+                memoryProvider.clear();
+                traceProvider.clear();
+                
+                resolveElfSymbols(targetElfPath, []).then(syms => {
+                    globalSymbols = syms;
+                    const mapRegions = targetElfPath ? parseZephyrMap(targetElfPath) : [];
+                    
+                    memoryProvider.refresh([], syms, mapRegions, []);
+                    
+                    if (currentPanelChart) {
+                        currentPanelChart.webview.postMessage({ command: 'loadData', logData: [], symbols: syms, regionsMeta: mapRegions, sramTopologies: [] });
+                    }
+                    if (currentPanelMem) {
+                        currentPanelMem.webview.postMessage({ command: 'updateSymbols', logData: [], symbols: syms, regionsMeta: mapRegions, sramTopologies: [] });
+                    }
+                    vscode.window.showInformationMessage('SOF mapping models fully reloaded and execution traces cleared.');
+                });
             } else if (message.command === 'togglePause') {
                 isLogPaused = message.state;
                 if (currentPanelChart) {
