@@ -99,9 +99,12 @@ function getOrSpawnTerminals() {
 }
 
 class SearchPanelProvider implements vscode.WebviewViewProvider {
+    public webviewView?: vscode.WebviewView;
     constructor(private readonly extensionUri: vscode.Uri) {}
 
     resolveWebviewView(webviewView: vscode.WebviewView) {
+        this.webviewView = webviewView;
+        vscode.commands.executeCommand('sof-logger.visualize');
         webviewView.webview.options = { enableScripts: true };
         webviewView.webview.html = `
             <!DOCTYPE html>
@@ -303,6 +306,7 @@ export function activate(context: vscode.ExtensionContext) {
   
   vscode.window.registerWebviewViewProvider('sofSearchView', new SearchPanelProvider(context.extensionUri));
   vscode.window.registerTreeDataProvider('sofTraceView', traceProvider);
+  vscode.window.registerTreeDataProvider('sofMemoryView', memoryProvider);
 
   context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openResource', (file: string, line: number, startT: number, endT?: number) => {
     if (file && fs.existsSync(file)) {
@@ -331,9 +335,12 @@ export function activate(context: vscode.ExtensionContext) {
 
   const disposable = vscode.commands.registerCommand('sof-logger.visualize', async () => {
     
-    // Register the custom Sidebar TreeViews smoothly binding DOM traces securely gracefully cleanly natively automatically logically!
-    vscode.window.registerTreeDataProvider('sofTraceView', traceProvider);
-    vscode.window.registerTreeDataProvider('sofMemoryView', memoryProvider);
+    if (currentPanelChart && currentPanelMem) {
+        currentPanelChart.reveal(vscode.ViewColumn.One);
+        currentPanelMem.reveal(vscode.ViewColumn.Two);
+        return;
+    }
+    
     const config = vscode.workspace.getConfiguration('sofLogger');
     const logFilePath = config.get<string>('qemuLogFile', '/tmp/qemu-exec-default.log');
 
