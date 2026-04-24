@@ -177,7 +177,33 @@
         };
 
         if (window.myChart) {
-          window.myChart.destroy();
+          if (cDeltaData.length === 0) {
+              window.myChart.destroy();
+              window.myChart = null;
+          } else {
+              window.myChart.data.datasets = datasets;
+              
+              if (cDeltaData && cDeltaData.length > 0) {
+                 const xScales = window.myChart.options.scales.x;
+                 const zoomWidth = xScales.max - xScales.min;
+                 const endX = cDeltaData[cDeltaData.length - 1].x;
+                 
+                 xScales.max = Math.max(zoomWidth, endX);
+                 xScales.min = xScales.max - zoomWidth;
+              }
+              
+              window.myChart.update('none');
+              return;
+          }
+        }
+
+        let initialMaxX = 0.010;
+        let initialMinX = 0;
+
+        if (cDeltaData && cDeltaData.length > 0) {
+            const endX = cDeltaData[cDeltaData.length - 1].x;
+            initialMaxX = Math.max(0.010, endX);
+            initialMinX = Math.max(0, initialMaxX - 0.010);
         }
 
         window.myChart = new Chart(ctx, {
@@ -325,6 +351,8 @@
             scales: {
               x: {
                 type: 'linear',
+                min: initialMinX,
+                max: initialMaxX,
                 title: { display: true, text: 'Time (ss:mmm:uuu)' },
                 ticks: {
                   callback: function(value) {
