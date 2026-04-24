@@ -54,43 +54,43 @@
       "properties": {
         "sofLogger.qemuPath": {
           "type": "string",
-          "default": "qemu-system-xtensa",
-          "description": "Path to the QEMU execution binary"
+          "default": "${env:HOME}/work/sof/qemu/build/qemu-system-xtensa",
+          "description": "The exact binary command used to launch QEMU (e.g., 'qemu-system-xtensa' or an absolute path if it is not in your system PATH)."
         },
         "sofLogger.targetBuildDir": {
           "type": "string",
-          "default": "",
-          "description": "Absolute path to the target build directory where zephyr.ri (kernel) and zephyr.elf reside"
+          "default": "${env:HOME}/work/sof/build-ptl",
+          "description": "The absolute root directory path to the compiled Zephyr target build. The extension will automatically look for 'zephyr/zephyr.ri' and 'zephyr/zephyr.elf' within this folder."
         },
         "sofLogger.qemuOptions": {
           "type": "string",
-          "default": "",
-          "description": "General QEMU execution parameters and memory dimensions"
+          "default": "-display none -serial mon:stdio -icount shift=5,align=off -smp 5",
+          "description": "Base architectural execution parameters passed to QEMU (e.g., memory dimensions '-m 512', etc). Use this for non-machine specific settings."
         },
         "sofLogger.qemuTargetOptions": {
           "type": "string",
-          "default": "",
-          "description": "Board, Machine, or specific Target options (-machine, -cpu, etc.)"
+          "default": "-machine adsp_ace30",
+          "description": "Specific Target configuration options. This usually specifies the board, machine, or CPU requirements (e.g., '-machine intel-ptl-dsp' or '-cpu ace30')."
         },
         "sofLogger.qemuLoggingOptions": {
           "type": "string",
-          "default": "",
-          "description": "QEMU trace, plugin, or logging specific flags (-d, -trace, etc.)"
+          "default": "-d func,int,mmu",
+          "description": "Supplemental debugging and logging parameters. Do NOT specify '-D <file>' here, as the extension automatically appends the 'qemuLogFile' path defined below."
         },
         "sofLogger.qemuLogFile": {
           "type": "string",
           "default": "/tmp/qemu-exec-default.log",
-          "description": "Absolute path to the QEMU execution trace log."
+          "description": "The absolute path where QEMU will export its execution trace data (automatically appended as '-D'). The extension parses this file for the Execution Graph and Memory Map."
         },
         "sofLogger.mtraceLogFile": {
           "type": "string",
           "default": "/tmp/ace-mtrace.log",
-          "description": "Absolute path to the exported Zephyr terminal string output log."
+          "description": "The path to the text output log from the Zephyr terminal. (NOTE: The parsing mechanisms for this log are currently hardcoded internally over the framework limits)."
         },
         "sofLogger.bufferSizeMB": {
           "type": "number",
           "default": 50,
-          "description": "Megabyte limit for child_process buffer captures (e.g. `nm -l` execution)."
+          "description": "Maximum memory limit (in MB) allocated for nodeJS child processes, explicitly preventing heap crashes when parsing huge ELF symbol table dumps via 'nm'."
         }
       }
     }

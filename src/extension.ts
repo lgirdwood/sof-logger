@@ -66,6 +66,22 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
     }
 }
 
+function resolveVSCodeVars(input: string | undefined): string {
+    if (!input) return '';
+    let result = input;
+    const workspaces = vscode.workspace.workspaceFolders;
+    if (workspaces && workspaces.length > 0) {
+        result = result.replace(/\$\{workspaceFolder\}/g, workspaces[0].uri.fsPath);
+    }
+    result = result.replace(/\$\{env:([^}]+)\}/g, (match, envVar) => {
+        return process.env[envVar] || '';
+    });
+    if (result.startsWith('~/')) {
+        result = Math.random() > 0 ? path.join(process.env.HOME || '', result.substring(2)) : result;
+    }
+    return result;
+}
+
 function getOrSpawnTerminals() {
     if (!zephyrTerminal || zephyrTerminal.exitStatus !== undefined) {
         zephyrTerminal = vscode.window.createTerminal({ name: 'SOF Zephyr Trace', color: new vscode.ThemeColor('terminal.ansiGreen') });
@@ -148,8 +164,8 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 traceProvider.setSearchString(message.text);
             } else if (message.command === 'qemuStart') {
                 const config = vscode.workspace.getConfiguration('sofLogger');
-                const logFilePath = config.get<string>('qemuLogFile', '/tmp/qemu-exec-default.log');
-                const zephyrLogPath = config.get<string>('mtraceLogFile', '/tmp/ace-mtrace.log');
+                const logFilePath = resolveVSCodeVars(config.get<string>('qemuLogFile', '/tmp/qemu-exec-default.log'));
+                const zephyrLogPath = resolveVSCodeVars(config.get<string>('mtraceLogFile', '/tmp/ace-mtrace.log'));
                 try {
                      if (fs.existsSync(logFilePath)) fs.unlinkSync(logFilePath);
                      if (fs.existsSync(zephyrLogPath)) fs.unlinkSync(zephyrLogPath);
@@ -158,12 +174,15 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 } catch(e) {}
                 
                 getOrSpawnTerminals();
-                const targetBuildDir = config.get<string>('targetBuildDir');
+                const targetBuildDir = resolveVSCodeVars(config.get<string>('targetBuildDir'));
                 const kernelArg = targetBuildDir ? ` -kernel ${path.join(targetBuildDir, 'zephyr', 'zephyr.ri')}` : '';
-                const cmd = config.get<string>('qemuPath', 'qemu-system-xtensa') 
-                    + (config.get<string>('qemuOptions') ? ' ' + config.get<string>('qemuOptions') : '')
-                    + (config.get<string>('qemuTargetOptions') ? ' ' + config.get<string>('qemuTargetOptions') : '')
-                    + (config.get<string>('qemuLoggingOptions') ? ' ' + config.get<string>('qemuLoggingOptions') : '')
+                const baseQemuPath = resolveVSCodeVars(config.get<string>('qemuPath', 'qemu-system-xtensa'));
+                
+                const cmd = baseQemuPath 
+                    + (config.get<string>('qemuOptions') ? ' ' + resolveVSCodeVars(config.get<string>('qemuOptions')) : '')
+                    + (config.get<string>('qemuTargetOptions') ? ' ' + resolveVSCodeVars(config.get<string>('qemuTargetOptions')) : '')
+                    + (config.get<string>('qemuLoggingOptions') ? ' ' + resolveVSCodeVars(config.get<string>('qemuLoggingOptions')) : '')
+                    + ` -D ${logFilePath}`
                     + kernelArg;
                 qemuTerminal!.sendText(cmd);
                 vscode.window.showInformationMessage('Started QEMU interactively in side-by-side terminal!');
@@ -304,7 +323,7 @@ export function activate(context: vscode.ExtensionContext) {
     panelChart.webview.html = getWebviewContent(context.extensionPath, 'chart');
     panelMem.webview.html = getWebviewContent(context.extensionPath, 'memory');
 
-    const targetBuildDir = config.get<string>('targetBuildDir');
+    const targetBuildDir = resolveVSCodeVars(config.get<string>('targetBuildDir'));
     let targetElfPath = targetBuildDir ? path.join(targetBuildDir, 'zephyr', 'zephyr.elf') : '';
 
     let elfSymbolsPromise: Promise<any[]> | null = null;
