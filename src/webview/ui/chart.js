@@ -176,6 +176,10 @@
           }
         };
 
+        if (window.myChart) {
+          window.myChart.destroy();
+        }
+
         window.myChart = new Chart(ctx, {
           type: 'line',
           plugins: [verticalLinePlugin],

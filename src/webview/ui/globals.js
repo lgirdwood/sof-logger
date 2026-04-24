@@ -46,8 +46,6 @@ const vscode = acquireVsCodeApi();
                 if (typeof initChartAndUI !== 'undefined') {
                     initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionData, intLevelData, iMissData, dMissData);
                 }
-                // Dynamically boot exclusively exactly the requested layout natively!
-                switchView(window.ACTIVE_LAYOUT_TYPE || 'chart');
                 } catch (e) {
                    document.body.innerHTML = '<h1 style="color:red;">Exception Caught During Load</h1><pre style="color:red;white-space:pre-wrap;">' + e.message + '\n' + e.stack + '</pre>';
                 }
@@ -55,17 +53,19 @@ const vscode = acquireVsCodeApi();
                 try {
                     logData = message.logData || logData;
                     symbolsData = message.symbols || [];
+                    const ovMem = document.getElementById('loadingOverlay');
+                    if (ovMem) ovMem.style.display = 'none';
                     
                     // Legacy trace maps cleanly dumped! VS Code Activity Bar handles this natively identically elegantly!
                     // @ts-ignore
                     if (window.memoryMapRendered) {
-                        // @ts-ignore
                         window.memoryMapRendered = false;
-                        const c = document.getElementById('memory-map-container');
-                        if (c) c.innerHTML = '';
                         const ml = document.getElementById('memoryMapLayout');
                         if (ml && (ml.style.display === 'flex' || ml.style.display === 'block')) {
                             switchView('memory');
+                        } else {
+                            if (typeof renderMemoryMap !== 'undefined') renderMemoryMap();
+                            window.memoryMapRendered = true;
                         }
                     }
                 } catch (e) {
@@ -105,22 +105,30 @@ const vscode = acquireVsCodeApi();
 
             // @ts-ignore
             if (!window.memoryMapRendered) {
-                const container = document.getElementById('memory-map-container');
-                if (container) {
-                    container.innerHTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%;"><div class="flash-target" style="padding: 20px; background: #333; color: white; border-radius: 8px; font-size: 16px;">Computing Topological Memory Intersections...</div></div>';
-                    setTimeout(() => {
-                        container.innerHTML = '';
+                const existing = document.getElementById('memory-map-container');
+                const isInitial = !existing || existing.children.length === 0;
+                
+                if (isInitial && existing) {
+                    existing.innerHTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%;"><div class="flash-target" style="padding: 20px; background: #333; color: white; border-radius: 8px; font-size: 16px;">Computing Topological Memory Intersections...</div></div>';
+                }
+                
+                setTimeout(() => {
+                    try {
                         // @ts-ignore
                         if (typeof renderMemoryMap !== 'undefined') renderMemoryMap();
                         // @ts-ignore
                         window.memoryMapRendered = true;
-                    }, 50);
-                }
+                    } catch (e) {
+                        if (existing) existing.innerHTML = '<h1 style="color:red;z-index:9999;position:absolute;">MemoryMap Crash: ' + e.message + '</h1><pre style="color:red;z-index:9999;position:absolute;top:50px;">' + e.stack + '</pre>';
+                        console.error('renderMemoryMap Exception:', e);
+                    }
+                }, isInitial ? 50 : 1);
             }
           }
         }
         
         // Broadcast the asynchronous execution cycle cleanly completely decoupling initialization deadlocks cleanly natively
         setTimeout(() => {
+            if (typeof switchView === 'function') switchView(window.ACTIVE_LAYOUT_TYPE || 'chart');
             vscode.postMessage({ command: 'ready' });
         }, 100);

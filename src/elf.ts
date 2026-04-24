@@ -77,41 +77,42 @@ export async function resolveElfSymbols(
           }
         }
 
-        // Post-process the initial log mappings natively dynamically re-interpolating 
-        // specific instruction limits matching the retrieved ELF layouts mathematically
-        for (const d of logData) {
-          if (d.funcAddr !== undefined) {
-            const addr = d.funcAddr;
-            let low = 0, high = symbols.length - 1;
-            let closestIndex = -1;
-            
-            // Execute standard binary-search resolving layout mapping rapidly
-            while (low <= high) {
-              const mid = Math.floor((low + high) / 2);
-              if (symbols[mid].addr <= addr) {
-                closestIndex = mid;
-                low = mid + 1;
-              } else {
-                high = mid - 1;
-              }
-            }
-            if (closestIndex !== -1) {
-              const sym = symbols[closestIndex];
-              if (sym.size > 0 && addr >= sym.addr + sym.size) {
-                // Address exceeded strictly bound function size limit natively
-                // Silently drop mappings exceeding the strictly bound size constraints.
-              } else {
-                d.funcName = sym.name;
-                if (sym.file) d.file = sym.file;
-                if (sym.line) d.line = sym.line;
-              }
-            }
-          }
-        }
+        applyElfSymbols(logData, symbols);
         
         vscode.window.showInformationMessage('Successfully resolved ' + symbols.length + ' ELF format symbols natively via: ' + path.basename(elfPath));
         resolve(symbols);
       });
     });
   });
+}
+
+export function applyElfSymbols(logData: any[], symbols: any[]) {
+  if (!symbols || symbols.length === 0) return;
+  for (const d of logData) {
+    if (d.funcAddr !== undefined) {
+      const addr = d.funcAddr;
+      let low = 0, high = symbols.length - 1;
+      let closestIndex = -1;
+      
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        if (symbols[mid].addr <= addr) {
+          closestIndex = mid;
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (closestIndex !== -1) {
+        const sym = symbols[closestIndex];
+        if (sym.size > 0 && addr >= sym.addr + sym.size) {
+          // Address exceeded strictly bound function size limit natively
+        } else {
+          d.funcName = sym.name;
+          if (sym.file) d.file = sym.file;
+          if (sym.line) d.line = sym.line;
+        }
+      }
+    }
+  }
 }

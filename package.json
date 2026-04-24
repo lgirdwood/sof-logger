@@ -57,10 +57,25 @@
           "default": "qemu-system-xtensa",
           "description": "Path to the QEMU execution binary"
         },
+        "sofLogger.targetBuildDir": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the target build directory where zephyr.ri (kernel) and zephyr.elf reside"
+        },
         "sofLogger.qemuOptions": {
           "type": "string",
           "default": "",
-          "description": "Command line options appended to the QEMU launch script natively."
+          "description": "General QEMU execution parameters and memory dimensions"
+        },
+        "sofLogger.qemuTargetOptions": {
+          "type": "string",
+          "default": "",
+          "description": "Board, Machine, or specific Target options (-machine, -cpu, etc.)"
+        },
+        "sofLogger.qemuLoggingOptions": {
+          "type": "string",
+          "default": "",
+          "description": "QEMU trace, plugin, or logging specific flags (-d, -trace, etc.)"
         },
         "sofLogger.qemuLogFile": {
           "type": "string",

@@ -1,21 +1,41 @@
         function renderMemoryMap() {
-          const container = document.getElementById('memory-map-container');
-          if (!container) return;
-          if (container.children.length > 0) return; // already rendered
+          const layoutContainer = document.getElementById('memoryMapLayout');
+          if (!layoutContainer) return;
+
+          let oldContainer = document.getElementById('memory-map-container');
+          window.__memMapState = window.__memMapState || {
+              mapZoom: 1.0,
+              baseZoom: 1.0,
+              scrollOffsets: {},
+              scrollTopStart: 0,
+              visualPanX: 0,
+              visualPanY: 0
+          };
+
+          if (oldContainer) {
+              if (!window.__memMapState.scrollOffsets) window.__memMapState.scrollOffsets = {};
+              oldContainer.querySelectorAll('.map-scrollable').forEach(s => {
+                  window.__memMapState.scrollOffsets[s.id] = s.scrollLeft;
+              });
+              window.__memMapState.scrollTopStart = layoutContainer.scrollTop;
+          }
+
+          const container = document.createElement('div');
+          container.id = 'memory-map-container-backbuffer';
+          container.style.height = '100%';
+          container.style.width = '100%';
+          container.style.flexGrow = '1';
+          container.style.overflowY = 'auto';
+          container.style.overflowX = 'hidden';
+          container.style.position = 'relative';
 
           let isDragging = false;
           let startX = 0;
           let startY = 0;
           let dxGlobal = 0;
           let scrollLeftStarts = [];
-          let scrollTopStart = 0;
+          
           let pendingZoomAnchor = null;
-          const layoutContainer = document.getElementById('memoryMapLayout');
-
-          let mapZoom = 1.0;
-          let baseZoom = 1.0;
-          let visualPanX = 0;
-          let visualPanY = 0;
           let redrawTimeout = null;
 
           function updateEdgeLabels() {
@@ -40,22 +60,22 @@
           }
 
           function commitRedraw() {
-              baseZoom = mapZoom;
-              visualPanX = 0;
-              visualPanY = 0;
+              window.__memMapState.baseZoom = window.__memMapState.mapZoom;
+              window.__memMapState.visualPanX = 0;
+              window.__memMapState.visualPanY = 0;
               
-              document.querySelectorAll('.map-scrollable').forEach(scrollable => {
+              container.querySelectorAll('.map-scrollable').forEach(scrollable => {
                  const inner = scrollable.querySelector('.map-inner');
                  if (inner) {
                      inner.style.transform = '';
                      // @ts-ignore
-                     inner.style.width = (mapZoom * 100) + '%';
+                     inner.style.width = (window.__memMapState.mapZoom * 100) + '%';
                  }
               });
               
-              document.querySelectorAll('.addr-marker').forEach(marker => {
+              container.querySelectorAll('.addr-marker').forEach(marker => {
                  // @ts-ignore
-                 marker.style.display = (mapZoom >= parseFloat(marker.dataset.z)) ? 'block' : 'none';
+                 marker.style.display = (window.__memMapState.mapZoom >= parseFloat(marker.dataset.z)) ? 'block' : 'none';
               });
               
               if (pendingZoomAnchor) {
@@ -77,16 +97,16 @@
           container.addEventListener('wheel', (e) => {
               e.preventDefault();
               let delta = e.deltaY > 0 ? -0.1 : 0.1;
-              if (mapZoom >= 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
-              if (mapZoom >= 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
-              if (mapZoom >= 15.0) delta = e.deltaY > 0 ? -5.0 : 5.0;
-              if (mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
-              if (mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
-              if (mapZoom >= 300.0) delta = e.deltaY > 0 ? -50.0 : 50.0;
+              if (window.__memMapState.mapZoom >= 2.0) delta = e.deltaY > 0 ? -0.5 : 0.5;
+              if (window.__memMapState.mapZoom >= 5.0) delta = e.deltaY > 0 ? -1.0 : 1.0;
+              if (window.__memMapState.mapZoom >= 15.0) delta = e.deltaY > 0 ? -5.0 : 5.0;
+              if (window.__memMapState.mapZoom >= 50.0) delta = e.deltaY > 0 ? -10.0 : 10.0;
+              if (window.__memMapState.mapZoom >= 100.0) delta = e.deltaY > 0 ? -25.0 : 25.0;
+              if (window.__memMapState.mapZoom >= 300.0) delta = e.deltaY > 0 ? -50.0 : 50.0;
               
-              mapZoom = Math.max(0.1, Math.min(2000.0, mapZoom + delta));
+              window.__memMapState.mapZoom = Math.max(0.1, Math.min(2000.0, window.__memMapState.mapZoom + delta));
               
-              const scale = mapZoom / baseZoom;
+              const scale = window.__memMapState.mapZoom / window.__memMapState.baseZoom;
               
               if (!pendingZoomAnchor) {
                   const scrolls = container.querySelectorAll('.map-scrollable');
@@ -99,7 +119,7 @@
               }
 
               if (pendingZoomAnchor) {
-                  document.querySelectorAll('.map-inner').forEach(inner => {
+                  container.querySelectorAll('.map-inner').forEach(inner => {
                       // @ts-ignore
                       inner.style.transformOrigin = pendingZoomAnchor.absX + 'px center';
                       // @ts-ignore
@@ -116,11 +136,11 @@
              startX = e.pageX;
              startY = e.pageY;
              dxGlobal = 0;
-             scrollLeftStarts = Array.from(document.querySelectorAll('.map-scrollable')).map(s => ({
+             scrollLeftStarts = Array.from(container.querySelectorAll('.map-scrollable')).map(s => ({
                 el: s,
                 startLeft: s.scrollLeft
              }));
-             if (layoutContainer) scrollTopStart = layoutContainer.scrollTop;
+             if (layoutContainer) window.__memMapState.scrollTopStart = layoutContainer.scrollTop;
              container.style.cursor = 'grabbing';
              clearTimeout(redrawTimeout);
           });
@@ -130,13 +150,13 @@
              e.preventDefault();
              dxGlobal = e.pageX - startX;
              const dy = e.pageY - startY;
-             document.querySelectorAll('.map-inner').forEach(inner => {
+             container.querySelectorAll('.map-inner').forEach(inner => {
                  // scaleX applies visual modifications without recomputing layouts!
                  // @ts-ignore
                  inner.style.transform = 'translateX(' + dxGlobal + 'px)';
              });
              
-             if (layoutContainer) layoutContainer.scrollTop = scrollTopStart - dy;
+             if (layoutContainer) layoutContainer.scrollTop = window.__memMapState.scrollTopStart - dy;
           });
 
           window.addEventListener('mouseup', () => {
@@ -156,6 +176,9 @@
           
           if (!symbolsData || symbolsData.length === 0) {
             container.innerHTML = '<p><i>Please use the "Load ELF Symbols" button successfully before tracing Hardware Memory allocations!</i></p>';
+            if (oldContainer) oldContainer.remove();
+            container.id = 'memory-map-container';
+            layoutContainer.appendChild(container);
             return;
           }
 
@@ -497,7 +520,7 @@
                    else if (offset % 8192 === 0) label.dataset.z = '25.0';
                    else label.dataset.z = '50.0';
                    
-                   label.style.display = (mapZoom >= parseFloat(label.dataset.z)) ? 'block' : 'none';
+                   label.style.display = (window.__memMapState.mapZoom >= parseFloat(label.dataset.z)) ? 'block' : 'none';
                    bDiv.appendChild(label);
               }
 
@@ -774,7 +797,7 @@
                else if (offset % 8192 === 0) label.dataset.z = '25.0';
                else label.dataset.z = '50.0';
                
-               label.style.display = (mapZoom >= parseFloat(label.dataset.z)) ? 'block' : 'none';
+               label.style.display = (window.__memMapState.mapZoom >= parseFloat(label.dataset.z)) ? 'block' : 'none';
                bDiv.appendChild(label);
           }
           
@@ -962,10 +985,22 @@
         mapInnerV.appendChild(vBlocksDiv);
         mapScrollV.appendChild(mapInnerV);
         vDiv.appendChild(mapScrollV);
-        if (container) {
-           container.appendChild(vDiv);
-        }
+        container.appendChild(vDiv);
         
+        // --- DOUBLE-BUFFERING LAYER SWAP ---
+        if (oldContainer) oldContainer.remove();
+        container.id = 'memory-map-container';
+        layoutContainer.appendChild(container);
+        
+        // Restore DOM states natively scaling over UI variables mapped explicitly
+        if (!window.__memMapState.scrollOffsets) window.__memMapState.scrollOffsets = {};
+        container.querySelectorAll('.map-scrollable').forEach(s => {
+            if (window.__memMapState.scrollOffsets[s.id] !== undefined) {
+                s.scrollLeft = window.__memMapState.scrollOffsets[s.id];
+            }
+        });
+        
+        commitRedraw();
         }
         
         // Truncate evaluation logic below 'vmh_alloc' because internal parameters duplicate pointer shifts corrupting boundaries.

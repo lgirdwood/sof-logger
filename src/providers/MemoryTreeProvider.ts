@@ -5,12 +5,18 @@ export class MemoryItem extends vscode.TreeItem {
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly details?: string,
-        public readonly children?: MemoryItem[]
+        public readonly children?: MemoryItem[],
+        public readonly id?: string
     ) {
         super(label, collapsibleState);
         this.tooltip = this.label;
         if (this.details) {
             this.description = this.details;
+        }
+        if (this.id) {
+            this.id = id;
+        } else {
+            this.id = label; // simple fallback
         }
     }
 }
@@ -61,6 +67,9 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<MemoryItem | undefined | void> = new vscode.EventEmitter<MemoryItem | undefined | void>();
     readonly onDidChangeTreeData: vscode.Event<MemoryItem | undefined | void> = this._onDidChangeTreeData.event;
 
+    private coreStacks: { [key: number]: any[] } = {};
+    private heapAllocs: any[] = [];
+    private finalHeapAllocs: any[] = [];
     private rootItems: MemoryItem[] = [];
     private searchString: string = '';
 
@@ -69,20 +78,25 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
         this._onDidChangeTreeData.fire();
     }
 
-    refresh(logData: any[], symbols: any[], regionsMeta: any[], sramTopologies: any[]): void {
+    clear(): void {
+        this.coreStacks = {};
+        this.heapAllocs = [];
+        this.finalHeapAllocs = [];
+        this.rootItems = [];
+        this._onDidChangeTreeData.fire();
+    }
+
+    refresh(deltaLogData: any[], symbols: any[], regionsMeta: any[], sramTopologies: any[]): void {
         this.rootItems = [];
 
         // 1. Dynamic Allocations
-        const coreStacks: { [key: number]: any[] } = {};
-        const heapAllocs: any[] = [];
-
-        logData.forEach((d) => {
+        deltaLogData.forEach((d) => {
              const core = d.core !== undefined ? d.core : 0;
-             if (!coreStacks[core]) coreStacks[core] = [];
+             if (!this.coreStacks[core]) this.coreStacks[core] = [];
              
              if (d.funcArgs) {
-                const deepStack = coreStacks[core].map(s => s.name);
-                coreStacks[core].push({ 
+                const deepStack = this.coreStacks[core].map(s => s.name);
+                this.coreStacks[core].push({ 
                     name: d.funcName, 
                     args: d.funcArgs, 
                     isEntry: isAllocCall(d.funcName),
@@ -90,18 +104,18 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                     sp: d.funcSp
                 });
              } else if (d.funcRet && d.funcSp) {
-                if (coreStacks[core].length > 0) {
+                if (this.coreStacks[core].length > 0) {
                    let matchIdx = -1;
-                   for (let i = coreStacks[core].length - 1; i >= 0; i--) {
-                       if (coreStacks[core][i].sp === d.funcSp) {
+                   for (let i = this.coreStacks[core].length - 1; i >= 0; i--) {
+                       if (this.coreStacks[core][i].sp === d.funcSp) {
                            matchIdx = i;
                            break;
                        }
                    }
                    
                    if (matchIdx !== -1) {
-                       const entryNode = coreStacks[core][matchIdx];
-                       coreStacks[core] = coreStacks[core].slice(0, matchIdx);
+                       const entryNode = this.coreStacks[core][matchIdx];
+                       this.coreStacks[core] = this.coreStacks[core].slice(0, matchIdx);
                        
                        const name = entryNode.name;
                        if (entryNode.isEntry && isAllocCall(name)) {
@@ -109,7 +123,7 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                            const flags = guessAllocFlags(name, entryNode.args);
                            const ptr = parseInt(d.funcRet, 16);
                            if (size > 0 && ptr > 0) {
-                              heapAllocs.push({
+                              this.heapAllocs.push({
                                   name: name,
                                   stackChain: entryNode.stackChain,
                                   addr: ptr,
@@ -125,13 +139,13 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
              }
         });
 
-        const finalHeapAllocs: any[] = [];
-        heapAllocs.forEach(alloc => {
+        this.finalHeapAllocs = [];
+        this.heapAllocs.forEach(alloc => {
             if (alloc.stackChain.includes('vmh_alloc') && alloc.name !== 'vmh_alloc') return;
             
             let replaced = false;
-            for (let i = finalHeapAllocs.length - 1; i >= Math.max(0, finalHeapAllocs.length - 15); i--) {
-                const prev = finalHeapAllocs[i];
+            for (let i = this.finalHeapAllocs.length - 1; i >= Math.max(0, this.finalHeapAllocs.length - 15); i--) {
+                const prev = this.finalHeapAllocs[i];
                 if (prev.stackChain && prev.stackChain.includes(alloc.name)) {
                     if (alloc.stackChain && alloc.stackChain.length > 0) {
                         prev.visualName = alloc.stackChain[alloc.stackChain.length - 1];
@@ -154,25 +168,25 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                     }
                     alloc.visualStack = alloc.stackChain || [];
                 }
-                finalHeapAllocs.push(alloc);
+                this.finalHeapAllocs.push(alloc);
             }
         });
 
-        if (finalHeapAllocs.length > 0) {
-            const dynChildren = finalHeapAllocs.map((alloc: any) => {
+        if (this.finalHeapAllocs.length > 0) {
+            const dynChildren = this.finalHeapAllocs.map((alloc: any) => {
                 const chainStr = (alloc.visualStack || alloc.stackChain || []).join(' > ');
                 let details = `Size: ${alloc.size} B`;
                 if (alloc.flags && alloc.flags !== 'N/A') details += ` | Flags: ${alloc.flags}`;
                 
-                const chainItems = (alloc.visualStack || alloc.stackChain || []).map((funcName: string) => {
-                    return new MemoryItem(funcName, vscode.TreeItemCollapsibleState.None);
+                const chainItems = (alloc.visualStack || alloc.stackChain || []).map((funcName: string, idx: number) => {
+                    return new MemoryItem(funcName, vscode.TreeItemCollapsibleState.None, undefined, undefined, `${alloc.addr}_${alloc.name}_${idx}`);
                 });
                 
                 const displayLabel = `[0x${alloc.addr.toString(16).toUpperCase()}] ${alloc.visualName || alloc.name}`;
-                return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, details, chainItems);
+                return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, details, chainItems, `alloc_${alloc.addr}_${alloc.name}`);
             });
             
-            this.rootItems.push(new MemoryItem('Heap (Dynamic)', vscode.TreeItemCollapsibleState.Expanded, `${finalHeapAllocs.length} Objects`, dynChildren));
+            this.rootItems.push(new MemoryItem('Heap (Dynamic)', vscode.TreeItemCollapsibleState.Expanded, `${this.finalHeapAllocs.length} Objects`, dynChildren, 'root_heap_dyn'));
         }
 
         // 2. Static Segment Allocations
@@ -191,10 +205,10 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
            const children = staticGroups[sName].sort((a: any, b: any) => a.addr - b.addr).map((sym: any) => {
                const details = `Size: ${sym.size} B`;
                const displayLabel = `[0x${sym.addr.toString(16).toUpperCase()}] ${sym.name}`;
-               return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details);
+               return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `static_${sym.addr}_${sym.name}`);
            });
            
-           this.rootItems.push(new MemoryItem(`Static .${sName} (${staticGroups[sName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children));
+           this.rootItems.push(new MemoryItem(`Static .${sName} (${staticGroups[sName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children, `root_static_${sName}`));
         });
 
         this._onDidChangeTreeData.fire();

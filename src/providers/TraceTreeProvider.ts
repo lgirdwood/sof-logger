@@ -22,6 +22,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
     readonly onDidChangeTreeData: vscode.Event<TraceTreeItem | undefined | void> = this._onDidChangeTreeData.event;
 
     private rootNodes: TraceTreeItem[] = [];
+    private stack: TraceTreeItem[] = [];
     private searchString: string = '';
 
     setSearchString(val: string) {
@@ -29,8 +30,14 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
         this._onDidChangeTreeData.fire();
     }
 
-    refresh(logData: any[]): void {
-        this.rootNodes = this.buildTraceTree(logData);
+    refresh(deltaLogData: any[]): void {
+        this.buildTraceTree(deltaLogData);
+        this._onDidChangeTreeData.fire();
+    }
+
+    clear(): void {
+        this.rootNodes = [];
+        this.stack = [];
         this._onDidChangeTreeData.fire();
     }
 
@@ -69,12 +76,9 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
         return null;
     }
 
-    private buildTraceTree(logData: any[]): TraceTreeItem[] {
-        const rootNodes: TraceTreeItem[] = [];
-        let stack: TraceTreeItem[] = [];
-
-        for (let i = 0; i < logData.length; i++) {
-            const p = logData[i];
+    private buildTraceTree(deltaLogData: any[]): void {
+        for (let i = 0; i < deltaLogData.length; i++) {
+            const p = deltaLogData[i];
             
             if (p.funcAddr !== undefined) {
                 if (p.funcArgs) {
@@ -94,19 +98,19 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                         p.t
                     );
 
-                    if (stack.length > 250) {
-                        stack[stack.length - 2].children.push(item);
-                        stack.push(item);
-                    } else if (stack.length > 0) {
-                        stack[stack.length - 1].children.push(item);
-                        stack.push(item);
+                    if (this.stack.length > 250) {
+                        this.stack[this.stack.length - 2].children.push(item);
+                        this.stack.push(item);
+                    } else if (this.stack.length > 0) {
+                        this.stack[this.stack.length - 1].children.push(item);
+                        this.stack.push(item);
                     } else {
-                        rootNodes.push(item);
-                        stack.push(item);
+                        this.rootNodes.push(item);
+                        this.stack.push(item);
                     }
                 } else if (p.funcRet) {
-                    if (stack.length > 0) {
-                        const current = stack.pop();
+                    if (this.stack.length > 0) {
+                        const current = this.stack.pop();
                         if (current) {
                             // @ts-ignore
                             current.endT = p.t;
@@ -118,8 +122,8 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                     }
                 }
             } else if (p.raw && p.raw.toLowerCase().includes('privilege error')) {
-                if (stack.length > 0) {
-                    for (const node of stack) {
+                if (this.stack.length > 0) {
+                    for (const node of this.stack) {
                         // @ts-ignore
                         node.state = vscode.TreeItemCollapsibleState.Expanded;
                         node.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
@@ -129,10 +133,10 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
         }
         
         // Auto-expand any lingering nodes aggressively wrapping trace dropouts cleanly securely smoothly 
-        for (const item of stack) {
-           item.description = (item.description || '') + ' (Unclosed Trace)';
+        for (const item of this.stack) {
+           if (!item.description || !item.description.toString().includes('Unclosed')) {
+               item.description = (item.description || '') + ' (Unclosed Trace)';
+           }
         }
-
-        return rootNodes;
     }
 }
