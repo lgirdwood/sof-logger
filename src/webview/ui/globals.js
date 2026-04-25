@@ -88,6 +88,16 @@ const vscode = acquireVsCodeApi();
                     window.myChart.options.scales.x.max = endX + padding;
                     window.myChart.update();
                 }
+            } else if (message.command === 'flashMemory') {
+                if (typeof switchView === 'function') switchView('memory');
+                const blockTarget = document.getElementById('mem-block-' + message.addr.toString(16));
+                if (blockTarget) {
+                    blockTarget.classList.remove('flash-target');
+                    void blockTarget.offsetWidth;
+                    blockTarget.classList.add('flash-target');
+                    
+                    blockTarget.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
+                }
             } else if (message.command === 'qemuState') {
                 window.qemuStatus = message.state;
                 if (typeof window.updateSliderLabel === 'function') {

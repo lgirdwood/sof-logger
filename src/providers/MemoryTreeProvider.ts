@@ -6,7 +6,8 @@ export class MemoryItem extends vscode.TreeItem {
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
         public readonly details?: string,
         public readonly children?: MemoryItem[],
-        public readonly id?: string
+        public readonly id?: string,
+        public readonly command?: vscode.Command
     ) {
         super(label, collapsibleState);
         this.tooltip = this.label;
@@ -71,6 +72,7 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
     private heapAllocs: any[] = [];
     private finalHeapAllocs: any[] = [];
     private rootItems: MemoryItem[] = [];
+    private cachedStaticItems: MemoryItem[] | null = null;
     private searchString: string = '';
 
     setSearchString(val: string) {
@@ -78,10 +80,19 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
         this._onDidChangeTreeData.fire();
     }
 
+    softClear(): void {
+        this.coreStacks = {};
+        this.heapAllocs = [];
+        this.finalHeapAllocs = [];
+        this.rootItems = this.cachedStaticItems ? [...this.cachedStaticItems] : [];
+        this._onDidChangeTreeData.fire();
+    }
+
     clear(): void {
         this.coreStacks = {};
         this.heapAllocs = [];
         this.finalHeapAllocs = [];
+        this.cachedStaticItems = null;
         this.rootItems = [];
         this._onDidChangeTreeData.fire();
     }
@@ -101,7 +112,9 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                     args: d.funcArgs, 
                     isEntry: isAllocCall(d.funcName),
                     stackChain: deepStack,
-                    sp: d.funcSp
+                    sp: d.funcSp,
+                    file: d.file,
+                    line: d.line
                 });
              } else if (d.funcRet && d.funcSp) {
                 if (this.coreStacks[core].length > 0) {
@@ -130,7 +143,9 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                                   size: size,
                                   flags: flags,
                                   args: entryNode.args,
-                                  sect: 'heap_dyn'
+                                  sect: 'heap_dyn',
+                                  file: entryNode.file,
+                                  line: entryNode.line
                               });
                            }
                        }
@@ -183,59 +198,75 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                 });
                 
                 const displayLabel = `[0x${alloc.addr.toString(16).toUpperCase()}] ${alloc.visualName || alloc.name}`;
-                return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, details, chainItems, `alloc_${alloc.addr}_${alloc.name}`);
+                return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, details, chainItems, `alloc_${alloc.addr}_${alloc.name}`, {
+                    command: 'sof-logger.openResource',
+                    title: 'Open Source',
+                    arguments: [alloc.file, alloc.line, undefined, undefined, alloc.addr]
+                });
             });
             
             this.rootItems.push(new MemoryItem('Heap (Dynamic)', vscode.TreeItemCollapsibleState.Expanded, `${this.finalHeapAllocs.length} Objects`, dynChildren, 'root_heap_dyn'));
         }
 
         // 2. Static Segment Allocations
-        const seenStatic = new Set();
-        
-        // 3. Topology Regions Mapping (SRAM block matching)
-        const regionGroups: { [key: string]: any[] } = {};
-        if (sramTopologies && sramTopologies.length > 0) {
-           sramTopologies.forEach(t => regionGroups[t.name] = []);
-        } else if (regionsMeta && regionsMeta.length > 0) {
-           regionsMeta.forEach(r => regionGroups[r.name] = []);
-        } else {
-             // Fallback exactly like old grouping!
-             regionGroups['HPSRAM'] = [];
-             regionGroups['LPSRAM'] = [];
-             regionGroups['IMR'] = [];
+        if (!this.cachedStaticItems && symbols && symbols.length > 0) {
+            this.cachedStaticItems = [];
+            const seenStatic = new Set();
+            
+            const regionGroups: { [key: string]: any[] } = {};
+            if (sramTopologies && sramTopologies.length > 0) {
+               sramTopologies.forEach((t: any) => regionGroups[t.name] = []);
+            } else if (regionsMeta && regionsMeta.length > 0) {
+               regionsMeta.forEach((r: any) => regionGroups[r.name] = []);
+            } else {
+                 regionGroups['HPSRAM'] = [];
+                 regionGroups['LPSRAM'] = [];
+                 regionGroups['IMR'] = [];
+            }
+
+            symbols.forEach((sym: any) => {
+               if ((!sym.sect || !sym.sect.startsWith('heap')) && sym.size > 0 && !seenStatic.has(sym.name)) {
+                   let rName = '';
+                   if (regionsMeta && regionsMeta.length > 0) {
+                       const matched = regionsMeta.find((r: any) => sym.addr >= r.start && sym.addr < r.end);
+                       if (matched) rName = matched.name;
+                   } 
+                   
+                   if (!rName) {
+                       const prefix = sym.addr >>> 20; 
+                       if (prefix === 0xA00) rName = 'HPSRAM';
+                       else if (prefix === 0xA01 || prefix === 0xA10) rName = 'LPSRAM';
+                       else rName = 'IMR';
+                       
+                       if (!regionGroups[rName]) regionGroups[rName] = [];
+                   }
+                   
+                   if (rName && regionGroups[rName]) {
+                      seenStatic.add(sym.name);
+                      regionGroups[rName].push(sym);
+                   }
+               }
+            });
+            
+            Object.keys(regionGroups).forEach(gName => {
+               if (regionGroups[gName].length === 0) return;
+               const children = regionGroups[gName].sort((a: any, b: any) => a.addr - b.addr).map((sym: any) => {
+                   const details = `Size: ${sym.size} B`;
+                   const displayLabel = `[0x${sym.addr.toString(16).toUpperCase()}] ${sym.name}`;
+                   return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `seg_${sym.addr}_${sym.name}`, {
+                        command: 'sof-logger.openResource',
+                        title: 'Open Source',
+                        arguments: [sym.file, sym.line, undefined, undefined, sym.addr]
+                   });
+               });
+               
+               this.cachedStaticItems!.push(new MemoryItem(`${gName} Segment (${regionGroups[gName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children, `root_seg_${gName}`));
+            });
         }
 
-        symbols.forEach(sym => {
-           if ((!sym.sect || !sym.sect.startsWith('heap')) && sym.size > 0 && !seenStatic.has(sym.name)) {
-               let rName = '';
-               // NOTE: We MUST natively honor structural memory layouts injected into provider globally!
-               if (regionsMeta && regionsMeta.length > 0) {
-                   const matched = regionsMeta.find(r => sym.addr >= r.start && sym.addr < r.end);
-                   if (matched) rName = matched.name;
-               } else {
-                   const prefix = sym.addr >>> 20; 
-                   if (prefix === 0xA00) rName = 'HPSRAM';
-                   else if (prefix === 0xA01 || prefix === 0xA10) rName = 'LPSRAM';
-                   else rName = 'IMR';
-               }
-               
-               if (rName && regionGroups[rName]) {
-                  seenStatic.add(sym.name);
-                  regionGroups[rName].push(sym);
-               }
-           }
-        });
-        
-        Object.keys(regionGroups).forEach(gName => {
-           if (regionGroups[gName].length === 0) return;
-           const children = regionGroups[gName].sort((a: any, b: any) => a.addr - b.addr).map((sym: any) => {
-               const details = `Size: ${sym.size} B`;
-               const displayLabel = `[0x${sym.addr.toString(16).toUpperCase()}] ${sym.name}`;
-               return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `seg_${sym.addr}_${sym.name}`);
-           });
-           
-           this.rootItems.push(new MemoryItem(`${gName} Segment (${regionGroups[gName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children, `root_seg_${gName}`));
-        });
+        if (this.cachedStaticItems && this.cachedStaticItems.length > 0) {
+            this.rootItems.push(...this.cachedStaticItems);
+        }
 
         this._onDidChangeTreeData.fire();
     }

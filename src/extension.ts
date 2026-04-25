@@ -204,8 +204,9 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 if (pollingInterval) clearInterval(pollingInterval);
                 if (logParser) logParser.close();
                 globalLogData = [];
-                memoryProvider.clear();
+                memoryProvider.softClear();
                 traceProvider.clear();
+                const cachedMapRegions = targetElfPath ? parseZephyrMap(targetElfPath) : [];
                 logParser = new IncrementalLogParser(logFilePath);
                 if (currentPanelChart) {
                     currentPanelChart.webview.postMessage({ command: 'qemuState', state: 'Running' });
@@ -222,8 +223,9 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                                globalLogData.push(...parseResult.dataPoints);
                            }
                            
+                           const regionsToUse = (parseResult.memoryRegions && parseResult.memoryRegions.length > 0) ? parseResult.memoryRegions : cachedMapRegions;
                            traceProvider.refresh(parseResult.dataPoints);
-                           memoryProvider.refresh(parseResult.dataPoints, globalSymbols, parseResult.memoryRegions || [], parseResult.sramTopologies || []);
+                           memoryProvider.refresh(parseResult.dataPoints, globalSymbols, regionsToUse, parseResult.sramTopologies || []);
                            
                            if (currentPanelChart) {
                                currentPanelChart.webview.postMessage({ 
@@ -314,21 +316,18 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.executeCommand('workbench.action.openSettings', '@ext:thesofproject.sof-logger');
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openResource', (file: string, line: number, startT: number, endT?: number) => {
-    if (file && fs.existsSync(file)) {
-      vscode.workspace.openTextDocument(vscode.Uri.file(file)).then(doc => {
-        vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside).then(editor => {
-            if (line) {
-              const pos = new vscode.Position(line - 1, 0);
-              editor.selection = new vscode.Selection(pos, pos);
-              editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-            }
-        });
-      });
-    } else if (file) {
-      vscode.window.showWarningMessage('Source file not found natively: ' + file);
-    }
+  let lastClickTime = 0;
+  let lastClickFile = '';
+  let lastClickLine = 0;
+
+  context.subscriptions.push(vscode.commands.registerCommand('sof-logger.openResource', (file: string, line: number, startT: number, endT?: number, addr?: number) => {
+    const now = Date.now();
+    const isDoubleClick = (now - lastClickTime < 400 && lastClickFile === file && lastClickLine === line);
     
+    lastClickTime = now;
+    lastClickFile = file;
+    lastClickLine = line;
+
     // Smoothly broadcast the execution window bound scaling natively backwards into the Webview!
     if (currentPanelChart && startT !== undefined) {
       currentPanelChart.webview.postMessage({
@@ -336,6 +335,51 @@ export function activate(context: vscode.ExtensionContext) {
         startT: startT,
         endT: endT || startT
       });
+    }
+
+    if (currentPanelMem && addr !== undefined) {
+      currentPanelMem.webview.postMessage({
+        command: 'flashMemory',
+        addr: addr
+      });
+    }
+
+    if (isDoubleClick) {
+      if (file && fs.existsSync(file)) {
+        let targetColumn: vscode.ViewColumn | undefined = vscode.ViewColumn.Active;
+        let isAlreadyOpen = false;
+        
+        for (const group of vscode.window.tabGroups.all) {
+            for (const tab of group.tabs) {
+                if (tab.input && typeof tab.input === 'object' && ('uri' in tab.input)) {
+                    if ((tab.input as any).uri.fsPath === file) {
+                        targetColumn = group.viewColumn;
+                        isAlreadyOpen = true;
+                        break;
+                    }
+                }
+            }
+            if (isAlreadyOpen) break;
+        }
+
+        if (!isAlreadyOpen) {
+            targetColumn = vscode.ViewColumn.Beside;
+        }
+
+        vscode.workspace.openTextDocument(vscode.Uri.file(file)).then(doc => {
+            vscode.window.showTextDocument(doc, targetColumn).then(editor => {
+                if (line) {
+                  const pos = new vscode.Position(line - 1, 0);
+                  editor.selection = new vscode.Selection(pos, pos);
+                  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+                }
+            });
+        });
+      } else if (file) {
+        vscode.window.showWarningMessage('Source file not found natively: ' + file);
+      }
+      
+      lastClickTime = 0; // reset click time
     }
   }));
 
