@@ -16,6 +16,7 @@ let currentPanelMem: vscode.WebviewPanel | undefined;
 // Structural tree models directly feeding sidebar views
 let traceProvider = new TraceTreeProvider();
 let memoryProvider = new MemoryTreeProvider();
+export let sofTraceTreeView: vscode.TreeView<any> | undefined;
 
 // Active memory footprint caching Zephyr ELF layouts dynamically
 let globalSymbols: any[] = [];
@@ -65,7 +66,7 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
                             startIndex: match.index,
                             length: match[0].length,
                             tooltip: `Symbol: ${sym.name} + 0x${offset.toString(16).toUpperCase()}\nSection: .${sym.sect}\nSize: ${sizeStr}\n(Ctrl+Click to Open Source)`,
-                            targetData: { file: sym.file, line: sym.line }
+                            targetData: { file: sym.file, line: sym.line, name: sym.name }
                         } as any);
                     }
                 }
@@ -79,16 +80,76 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
      */
     handleTerminalLink(link: any): vscode.ProviderResult<void> {
         const data = link.targetData;
-        if (data.file && fs.existsSync(data.file)) {
-            vscode.workspace.openTextDocument(vscode.Uri.file(data.file)).then(doc => {
-              vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside).then(editor => {
-                if (data.line) {
-                  const pos = new vscode.Position(data.line - 1, 0);
-                  editor.selection = new vscode.Selection(pos, pos);
-                  editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
-                }
-              });
-            });
+        
+        try { fs.appendFileSync('/tmp/sof-handler.log', `[Click] TargetData: ${JSON.stringify(data)}\n`); } catch(e){}
+
+        if (!data || !data.name) {
+            vscode.window.showInformationMessage(`Terminal Link dropped: Missing symbol name dynamically.`);
+            try { fs.appendFileSync('/tmp/sof-handler.log', `[Drop] Missing name\n`); } catch(e){}
+        }
+
+        // Execute chart zooms dynamically tracking occurrences naturally matching traces sequentially cleanly
+        if (data && data.name) {
+             let traceItem = traceProvider.findLastExecutionByName(data.name);
+             try { fs.appendFileSync('/tmp/sof-handler.log', `[TraceItem] Found: ${!!traceItem}, HasTreeView: ${!!sofTraceTreeView}, TreeViewVisible: ${sofTraceTreeView?.visible}\n`); } catch(e){}
+
+             if (!traceItem) {
+                 vscode.window.showInformationMessage(`Target Function Trace '${data.name}' natively skipped parsing. Expanding innermost chronological context instead...`);
+                 traceItem = traceProvider.getMostRecentExecution();
+             } 
+             
+             if (!traceItem) {
+                 vscode.window.showInformationMessage(`Target Function Trace '${data.name}' not historically present and Trace Buffer Empty!`);
+             } else if (!sofTraceTreeView) {
+                 vscode.window.showInformationMessage(`Fatal UI Error: sofTraceTreeView is undefined abruptly!`);
+             } else {
+                 sofTraceTreeView.reveal(traceItem, { select: true, focus: true, expand: true }).then(() => {
+                    try { fs.appendFileSync('/tmp/sof-handler.log', `[Reveal] Promise Success\n`); } catch(e){}
+                 }, (err) => {
+                    vscode.window.showErrorMessage(`Reveal rejected dynamically: ${err}`);
+                    try { fs.appendFileSync('/tmp/sof-handler.log', `[Reveal] Promise Reject: ${err}\n`); } catch(e){}
+                 });
+                 
+                 // Directly zoom executions dynamically bypassing redundant rendering completely gracefully effortlessly flawlessly implicitly
+                 if (traceItem.startT !== undefined && currentPanelChart) {
+                      currentPanelChart.webview.postMessage({
+                          command: 'zoomBounds',
+                          startT: traceItem.startT,
+                          endT: traceItem.endT || traceItem.startT
+                      });
+                      try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Chart updated gracefully\n`); } catch(e){}
+                 } else if (!currentPanelChart) {
+                      vscode.window.showInformationMessage(`Target Panel Chart dropped abruptly!`);
+                      try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: Chart Panel undefined\n`); } catch(e){}
+                 } else {
+                      try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: startT is undefined\n`); } catch(e){}
+                 }
+             }
+        }
+
+        if (data && data.file && fs.existsSync(data.file)) {
+            const uri = vscode.Uri.file(data.file);
+            const existingEditor = vscode.window.visibleTextEditors.find(e => e.document.uri.fsPath === uri.fsPath);
+            
+            if (existingEditor) {
+                vscode.window.showTextDocument(existingEditor.document, existingEditor.viewColumn, false).then(editor => {
+                    if (data.line) {
+                        const pos = new vscode.Position(data.line - 1, 0);
+                        editor.selection = new vscode.Selection(pos, pos);
+                        editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+                    }
+                });
+            } else {
+                vscode.workspace.openTextDocument(uri).then(doc => {
+                  vscode.window.showTextDocument(doc, vscode.ViewColumn.Beside).then(editor => {
+                    if (data.line) {
+                      const pos = new vscode.Position(data.line - 1, 0);
+                      editor.selection = new vscode.Selection(pos, pos);
+                      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+                    }
+                  });
+                });
+            }
         }
     }
 }
@@ -361,7 +422,8 @@ export function activate(context: vscode.ExtensionContext) {
   // Bind UI structures efficiently eagerly
   context.subscriptions.push(vscode.window.registerTerminalLinkProvider(new SOFTerminalLinkProvider()));
   vscode.window.registerWebviewViewProvider('sofSearchView', new SearchPanelProvider(context.extensionUri));
-  vscode.window.registerTreeDataProvider('sofTraceView', traceProvider);
+  sofTraceTreeView = vscode.window.createTreeView('sofTraceView', { treeDataProvider: traceProvider, showCollapseAll: true });
+  context.subscriptions.push(sofTraceTreeView);
   vscode.window.registerTreeDataProvider('sofMemoryView', memoryProvider);
 
   // Bind arbitrary layout toggles executing smoothly implicitly natively seamlessly

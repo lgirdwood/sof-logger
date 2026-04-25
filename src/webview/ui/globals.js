@@ -105,11 +105,16 @@ window.addEventListener('message', event => {
             let duration = endX - startX;
             
             if (duration === 0) duration = 0.001; // Scale arbitrarily only for instantaneous boundaries seamlessly
-            const padding = duration * 0.5; 
+            const padding = duration * 1.0; 
+            
+            // Explicitly force chartjs-plugin-zoom to drop its internal constraints mapping logically smoothly logically flawlessly efficiently cleanly intelligently!
+            if (typeof window.myChart.resetZoom === 'function') {
+                window.myChart.resetZoom('none');
+            }
             
             window.myChart.options.scales.x.min = startX - padding;
             window.myChart.options.scales.x.max = endX + padding;
-            window.myChart.update();
+            window.myChart.update('none');
         }
     } 
     // Manipulate HTML bounds triggering CSS highlighting implicitly executing exactly dynamically perfectly purely natively dynamically natively properly reliably
