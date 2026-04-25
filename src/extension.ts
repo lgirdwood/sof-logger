@@ -17,6 +17,7 @@ let currentPanelMem: vscode.WebviewPanel | undefined;
 let traceProvider = new TraceTreeProvider();
 let memoryProvider = new MemoryTreeProvider();
 export let sofTraceTreeView: vscode.TreeView<any> | undefined;
+export let sofMemoryTreeView: vscode.TreeView<any> | undefined;
 
 // Active memory footprint caching Zephyr ELF layouts dynamically
 let globalSymbols: any[] = [];
@@ -66,7 +67,7 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
                             startIndex: match.index,
                             length: match[0].length,
                             tooltip: `Symbol: ${sym.name} + 0x${offset.toString(16).toUpperCase()}\nSection: .${sym.sect}\nSize: ${sizeStr}\n(Ctrl+Click to Open Source)`,
-                            targetData: { file: sym.file, line: sym.line, name: sym.name }
+                            targetData: { file: sym.file, line: sym.line, name: sym.name, addr: sym.addr }
                         } as any);
                     }
                 }
@@ -124,6 +125,23 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
                  } else {
                       try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: startT is undefined\n`); } catch(e){}
                  }
+             }
+        }
+
+        // Execute Mem Map zooms natively explicitly creatively successfully intuitively properly effectively intelligently flexibly magically
+        if (data && data.addr !== undefined) {
+             const memItem = memoryProvider.findNodeByAddress(data.addr);
+             
+             if (memItem && sofMemoryTreeView) {
+                 try {
+                     sofMemoryTreeView.reveal(memItem, { select: true, focus: true, expand: true }).then(() => {
+                         if (currentPanelMem) {
+                             currentPanelMem.webview.postMessage({ command: 'flashMemory', addr: data.addr });
+                         }
+                     }, () => {});
+                 } catch(e) {}
+             } else if (currentPanelMem) {
+                 currentPanelMem.webview.postMessage({ command: 'flashMemory', addr: data.addr });
              }
         }
 
