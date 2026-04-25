@@ -1,57 +1,76 @@
 import * as fs from 'fs';
 import * as readline from 'readline';
 
+/**
+ * Interface structurally representing a single execution tick or CPU state change
+ * processed sequentially from the UART / Zephyr debugging terminals.
+ */
 export interface LogDataPoint {
-  t: number;
-  c?: number;
-  core?: number;
-  um?: number;
-  ring?: number;
-  intLevel?: number;
-  excCause?: number;
-  tlbType?: 'I' | 'D';
-  tlbDetails?: string;
-  ioType?: 'read' | 'write';
-  ioDevice?: string;
-  ioDetails?: string;
-  iMiss?: number | null;
-  dMiss?: number | null;
-  callDepth?: number;
-  funcAddr?: number;
-  funcSp?: string;
-  funcName?: string;
-  funcArgs?: string[];
-  funcRet?: string;
-  file?: string;
-  line?: number;
-  caller?: string;
-  raw?: string;
+  t: number;                  // Core tick constraint / timing measurement
+  c?: number;                 // Sub-cycle clock constraint
+  core?: number;              // Target DSP Core Identifier explicitly (e.g. Core 0)
+  um?: number;                // User Mode execution isolation flags (0/1)
+  ring?: number;              // Privilege Ring Execution level
+  intLevel?: number;          // Native interrupt hardware masking levels
+  excCause?: number;          // Xtensa EXCCAUSE execution termination signals
+  tlbType?: 'I' | 'D';        // TLB type: Instruction or Data
+  tlbDetails?: string;        // Explicit string detailing TLB metadata
+  ioType?: 'read' | 'write';  // Hardware IO execution bounds natively
+  ioDevice?: string;          // Extrapolated Device Name connected to IO
+  ioDetails?: string;         // Detailed payload tracing bytes/sizes
+  iMiss?: number | null;      // Instruction Cache miss counts cumulatively
+  dMiss?: number | null;      // Data Cache miss counts cumulatively
+  callDepth?: number;         // Dynamic execution stack depths actively managed
+  funcAddr?: number;          // Pure Execution Program Counter Virtual Address
+  funcSp?: string;            // Exact Stack Pointer bounds
+  funcName?: string;          // Symbolically resolved string identifying ASM/C routine
+  funcArgs?: string[];        // Array extrapolating execution arguments natively
+  funcRet?: string;           // Optional function return literal pointer/address
+  file?: string;              // Host file directory containing the resolved symbol natively
+  line?: number;              // Source execution line natively binding logical statements
+  caller?: string;            // Identifying parent frames abstractly
+  raw?: string;               // Exact unparsed string footprint linearly evaluated
 }
 
+/**
+ * Bounds defining spatial location memory assignments securely
+ */
 export interface MemoryRegion {
-  name: string;
-  start: number;
-  end: number;
+  name: string;               // Symbolic structural binding identity (e.g. HPSRAM)
+  start: number;              // Originating boundary
+  end: number;                // Ending capacity constraint boundary natively
 }
 
+/**
+ * Extrapolation of structural memory constraints specifically tracking 
+ * block counts internally from device hardware definitions.
+ */
 export interface SramTopology {
-  name: string;
-  banks: number;
-  bankSize: number;
+  name: string;               // Top level block identity (e.g. L2 SRAM)
+  banks: number;              // Total distinct memory blocks bound inside SRAM
+  bankSize: number;           // Uniform memory footprint across identical blocks
 }
 
+/**
+ * Packaging natively representing a cohesive parsed data block explicitly.
+ */
 export interface ParseResult {
-  dataPoints: LogDataPoint[];
-  elfPath: string | null;
-  memoryRegions?: MemoryRegion[];
-  sramTopologies?: SramTopology[];
+  dataPoints: LogDataPoint[];              // Dynamic state log execution streams array
+  elfPath: string | null;                  // Dynamically located zephyr executable from log headers
+  memoryRegions?: MemoryRegion[];          // Spatial configurations detected dynamically natively
+  sramTopologies?: SramTopology[];         // Exact bank geometries internally captured dynamically
 }
 
+/**
+ * The standard stateful parser ingesting incremental tail buffers across local executions
+ * logically preserving memory frames between asynchronous evaluation ticks.
+ */
 export class IncrementalLogParser {
-  private fd: number = -1;
-  private offset: number = 0;
-  private remainder: string = '';
+  private fd: number = -1;                          // File descriptor natively hooked to the UART target
+  private offset: number = 0;                       // Offset bytes read allowing incremental sequential execution seamlessly
+  private remainder: string = '';                   // Fragment preserved ensuring multi-line strings merge cleanly
 
+  // Persistent logical tracking variables persisting across asynchronous iterations securely
   private currentElfPath: string | null = null;
   private currentUM: number | null = null;
   private currentRing: number | null = null;
@@ -62,13 +81,15 @@ export class IncrementalLogParser {
   private currentT = 0;
   private currentC: number | null = null;
 
+  // Statically tracked topologies collected throughout early execution frames
   private parsedRegions: MemoryRegion[] = [];
   private parsedSramTopologies: SramTopology[] = [];
 
-  // Central mapping RegExp sequences
+  // Central mapping RegExp sequences optimizing extraction stringently
   private tRegex = /^\[(?:c:\d+\s+)?T:(0x[0-9a-fA-F]+)(?:\s+C:(0x[0-9a-fA-F]+))?/;
   private psRegex = /\b(?:ps|PS)\s*=\s*(0x[0-9a-fA-F]+)/;
   private missRegex = /Imiss=(\d+)\s+Dmiss=(\d+)/i;
+  // Execution constraints evaluating nested arguments rigorously
   private funcEntryRegex = /FUNC ENTRY:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+a2=(0x[0-9a-fA-F]+)\s+a3=(0x[0-9a-fA-F]+)\s+a4=(0x[0-9a-fA-F]+)\s+a5=(0x[0-9a-fA-F]+)\s+a6=(0x[0-9a-fA-F]+)\s+a7=(0x[0-9a-fA-F]+)/;
   private funcRetRegex = /FUNC RET:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+(?:ret|a2)=(0x[0-9a-fA-F]+)/;
   private excRegex = /EXCCAUSE\s*=\s*(\d+)/;
@@ -81,9 +102,16 @@ export class IncrementalLogParser {
 
   constructor(private filePath: string) {}
 
+  /**
+   * Evaluates trailing chunks progressively updating dynamic memory tracking parameters.
+   * Invoked via periodic polling seamlessly evaluating new file lengths directly natively.
+   * 
+   * @returns ParseResult Object array containing distinct structural datapoints logically assigned securely
+   */
   public parseNext(): ParseResult {
     const dataPoints: LogDataPoint[] = [];
 
+    // Initialize raw file descriptor binding immediately gracefully surviving uncreated files 
     if (this.fd === -1) {
       if (!fs.existsSync(this.filePath)) {
         return { dataPoints: [], elfPath: this.currentElfPath, memoryRegions: this.parsedRegions, sramTopologies: this.parsedSramTopologies };
@@ -96,9 +124,10 @@ export class IncrementalLogParser {
     }
 
     try {
+      // Evaluate static boundaries securely computing raw bytes delta natively
       const stat = fs.fstatSync(this.fd);
       if (stat.size <= this.offset) {
-        // Handle file truncation safely seamlessly gracefully
+        // Handle file truncation safely seamlessly gracefully (e.g. QEMU log rotated / reset)
         if (stat.size < this.offset) {
            this.offset = 0;
            this.remainder = '';
@@ -107,14 +136,16 @@ export class IncrementalLogParser {
         }
       }
 
+      // Pre-allocate buffer matching delta exactly eliminating overhead
       const lengthToRead = stat.size - this.offset;
       const buf = Buffer.alloc(lengthToRead);
       fs.readSync(this.fd, buf, 0, lengthToRead, this.offset);
       this.offset += lengthToRead;
 
+      // Concatenate fractional leftovers with complete utf8 payload
       let chunk = this.remainder + buf.toString('utf8');
       
-      // If we don't end in a newline, reserve the last part back into remainder
+      // If we don't end in a newline, reserve the last part back into remainder exactly escaping bad regex breaks 
       const endsWithNewline = chunk.endsWith('\n') || chunk.endsWith('\r');
       const lines = chunk.split(/\r?\n/);
 
@@ -125,9 +156,11 @@ export class IncrementalLogParser {
         if (lines[lines.length - 1] === '') lines.pop(); // Remove naturally empty slice dynamically correctly
       }
 
+      // Linear iterative processing block
       for (const line of lines) {
         if (!line.trim()) continue;
 
+        // Extract timing properties natively globally assigned avoiding redundancy
         const tMatch = line.match(this.tRegex);
         if (tMatch) {
           this.currentT = parseInt(tMatch[1], 16);
@@ -144,6 +177,7 @@ export class IncrementalLogParser {
         let currentIoDevice: string | null = null;
         let currentIoDetails: string | null = null;
 
+        // Process Device Hardware Interactions
         const ioMatch = line.match(this.ioRegex);
         if (ioMatch) {
           currentIoDevice = ioMatch[1];
@@ -152,6 +186,7 @@ export class IncrementalLogParser {
           changed = true;
         }
 
+        // Process Cache/Memory Controller Metadata Log Traces
         const tlbMatch = line.match(this.tlbRegex);
         if (tlbMatch) {
           if (!currentTlbType) currentTlbType = tlbMatch[1].toUpperCase() as 'I' | 'D';
@@ -159,6 +194,7 @@ export class IncrementalLogParser {
           else currentTlbDetails += ' | ' + tlbMatch[2];
           changed = true;
         } else {
+          // Native structural reset logs explicitly denoting mapping boundaries
           const resetMmuMatch = line.match(/way=\d+\s+entry=\d+\s+(vaddr=.*)/i);
           if (resetMmuMatch) {
             if (!currentTlbType) currentTlbType = 'I';
@@ -167,6 +203,7 @@ export class IncrementalLogParser {
           }
         }
 
+        // Interrupt / Exception Cause mapping natively capturing Privilege Faults explicitly
         const excMatch = line.match(this.excRegex);
         if (excMatch) {
           currentExc = parseInt(excMatch[1], 10);
@@ -180,9 +217,10 @@ export class IncrementalLogParser {
         let currentFuncRet: string | null = null;
         let currentFuncSp: string | null = null;
 
+        // Recursive Stack Evaluator assigning depths systematically
         const entryMatch = line.match(this.funcEntryRegex);
         if (entryMatch) {
-          this.currentCallDepth++;
+          this.currentCallDepth++; // Increment context linearly natively
           changed = true;
           currentFuncAddr = parseInt(entryMatch[1], 16);
           currentFuncSp = entryMatch[2];
@@ -190,7 +228,7 @@ export class IncrementalLogParser {
         } else {
           const retMatch = line.match(this.funcRetRegex);
           if (retMatch) {
-            this.currentCallDepth = Math.max(0, this.currentCallDepth - 1);
+            this.currentCallDepth = Math.max(0, this.currentCallDepth - 1); // Decrement carefully bypassing negative dips seamlessly
             changed = true;
             currentFuncAddr = parseInt(retMatch[1], 16);
             currentFuncSp = retMatch[2];
@@ -198,11 +236,13 @@ export class IncrementalLogParser {
           }
         }
 
+        // Extract native executable pointers mapping strictly matching active sessions exclusively
         const firmwareMatch = line.match(this.firmwareRegex);
         if (firmwareMatch) {
           this.currentElfPath = firmwareMatch[1].trim();
         }
 
+        // Topology Evaluators recursively capturing system allocations implicitly printed via Zephyr natively
         const regionMatch = line.match(this.regionRegex);
         if (regionMatch) {
           this.parsedRegions.push({
@@ -231,6 +271,7 @@ export class IncrementalLogParser {
           this.parsedRegions.push({ name: baseName + '-coherent', start: cStart, end: cStart + size - 1 });
         }
 
+        // Processor state evaluations deriving Privilege execution natively
         const psMatch = line.match(this.psRegex);
         if (psMatch) {
           const psVal = parseInt(psMatch[1], 16);
@@ -244,6 +285,7 @@ export class IncrementalLogParser {
           changed = true;
         }
 
+        // Cache miss evaluator aggregating seamlessly
         const missMatch = line.match(this.missRegex);
         if (missMatch) {
           const imiss = parseInt(missMatch[1], 10);
@@ -256,6 +298,7 @@ export class IncrementalLogParser {
           }
         }
 
+        // Compile distinct structured point matching exclusively modified nodes avoiding redundant empty loops
         if (changed) {
           dataPoints.push({
             t: this.currentT,
@@ -292,6 +335,9 @@ export class IncrementalLogParser {
     };
   }
 
+  /**
+   * Graceful destruction terminating active handles completely cleanly securely.
+   */
   public close() {
     if (this.fd !== -1) {
       try {

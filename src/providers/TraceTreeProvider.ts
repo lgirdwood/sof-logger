@@ -1,50 +1,81 @@
 import * as vscode from 'vscode';
 
+/**
+ * Encapsulates a distinct hierarchical trace function natively mapping Zephyr stack ingress/egress.
+ * Maintains chronological bounding variables implicitly wrapping temporal execution footprints seamlessly.
+ */
 export class TraceTreeItem extends vscode.TreeItem {
-    public children: TraceTreeItem[] = [];
+    public children: TraceTreeItem[] = []; // Explicit recursive dependency tree evaluating nested stack scopes securely
 
     constructor(
-        public readonly label: string,
-        public readonly state: vscode.TreeItemCollapsibleState,
-        public readonly command?: vscode.Command,
-        public readonly line?: number,
-        public readonly file?: string,
-        public readonly startT?: number,
-        public readonly endT?: number
+        public readonly label: string,                                     // Textual display name formatting pointer footprints cleanly
+        public readonly state: vscode.TreeItemCollapsibleState,            // UI hierarchy tracking open/closed nested bounds
+        public readonly command?: vscode.Command,                          // Navigates instantly onto VS Code editor source lines
+        public readonly line?: number,                                     // Exact physical source configuration boundary
+        public readonly file?: string,                                     // Originating absolute/relative mapping path explicitly
+        public readonly startT?: number,                                   // Ingress Execution Tick exactly bounding entry natively
+        public readonly endT?: number                                      // Egress Execution Tick securely matching return logic natively
     ) {
         super(label, state);
-        this.contextValue = 'traceItem';
+        this.contextValue = 'traceItem'; // Explicit context enabling context menus dynamically securely
     }
 }
 
+/**
+ * Controller mapping sequential UART traces structurally against the VS Code left sidebar natively explicitly.
+ */
 export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<TraceTreeItem | undefined | void> = new vscode.EventEmitter<TraceTreeItem | undefined | void>();
     readonly onDidChangeTreeData: vscode.Event<TraceTreeItem | undefined | void> = this._onDidChangeTreeData.event;
 
+    // Active nodes currently rendering visually explicitly
     private rootNodes: TraceTreeItem[] = [];
+    
+    // Lifo recursive scope implicitly tracking nested boundaries dynamically explicitly correctly seamlessly 
     private stack: TraceTreeItem[] = [];
+    
+    // Abstract query parameter constraining view outputs seamlessly explicitly correctly
     private searchString: string = '';
 
+    /**
+     * Integrates string parameters natively refreshing graphical interfaces selectively rendering isolated blocks seamlessly
+     * 
+     * @param val Evaluated search parameter natively matching textual descriptors dynamically
+     */
     setSearchString(val: string) {
         this.searchString = val.toLowerCase();
         this._onDidChangeTreeData.fire();
     }
 
+    /**
+     * Incrementally pushes execution data directly extending trees sequentially
+     * 
+     * @param deltaLogData Sub-array of newly parsed UART entries internally matching exact structures accurately explicitly
+     */
     refresh(deltaLogData: any[]): void {
         this.buildTraceTree(deltaLogData);
         this._onDidChangeTreeData.fire();
     }
 
+    /**
+     * Erases completely native tracking buffers dropping references flawlessly 
+     */
     clear(): void {
         this.rootNodes = [];
         this.stack = [];
         this._onDidChangeTreeData.fire();
     }
 
+    /**
+     * Core VS Code tree provider interface correctly
+     */
     getTreeItem(element: TraceTreeItem): vscode.TreeItem {
         return element;
     }
 
+    /**
+     * Resolves nodes hierarchically matching filters explicitly natively gracefully
+     */
     getChildren(element?: TraceTreeItem): Thenable<TraceTreeItem[]> {
         let items = element ? (element.children || []) : this.rootNodes;
         if (this.searchString && items.length > 0) {
@@ -53,16 +84,26 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
         return Promise.resolve(items);
     }
 
+    /**
+     * Internal string evaluator matching nested trace structures flawlessly bypassing dead paths dynamically seamlessly.
+     * 
+     * @param item Evaluated trace tree scope dynamically passed linearly natively
+     * @returns New duplicated node containing isolated path footprints perfectly
+     */
     private filterItem(item: TraceTreeItem): TraceTreeItem | null {
+        // Expand matches capturing detailed metrics concurrently
         const matchesSelf = item.label.toLowerCase().includes(this.searchString) || 
                             (item.description && typeof item.description === 'string' && item.description.toLowerCase().includes(this.searchString));
         
+        // Terminate at dead ends correctly
         if (!item.children || item.children.length === 0) {
             return matchesSelf ? item : null;
         }
 
+        // Evaluate nested layers natively cleanly explicitly
         const filteredChildren = item.children.map(child => this.filterItem(child)).filter(c => c !== null) as TraceTreeItem[];
         
+        // Inherit path successfully opening parents completely seamlessly navigating explicit structures explicitly 
         if (matchesSelf || filteredChildren.length > 0) {
             const childrenToUse = matchesSelf ? item.children : filteredChildren;
             const newItem = new TraceTreeItem(item.label, 
@@ -76,11 +117,18 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
         return null;
     }
 
+    /**
+     * Integrates dynamically arriving structures linearly extending visual stacks sequentially explicit securely seamlessly.
+     * 
+     * @param deltaLogData UART delta fragments
+     */
     private buildTraceTree(deltaLogData: any[]): void {
         for (let i = 0; i < deltaLogData.length; i++) {
             const p = deltaLogData[i];
             
+            // Execute evaluations dynamically validating structurally explicit entries
             if (p.funcAddr !== undefined) {
+                // Detect Stack Entry inherently allocating children exactly perfectly 
                 if (p.funcArgs) {
                     const nameLabel = p.funcName || '0x' + p.funcAddr.toString(16);
                     const labelStr = nameLabel + ' (a2...a7: ' + p.funcArgs.join(', ') + ')';
@@ -98,6 +146,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                         p.t
                     );
 
+                    // Suppress exceedingly recursive crashes seamlessly bypassing rendering faults effectively dynamically safely
                     if (this.stack.length > 250) {
                         this.stack[this.stack.length - 2].children.push(item);
                         this.stack.push(item);
@@ -108,10 +157,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                         this.rootNodes.push(item);
                         this.stack.push(item);
                     }
-                } else if (p.funcRet) {
+                } 
+                // Detect Stack Exit natively stripping items properly seamlessly mapping properties definitively explicitly
+                else if (p.funcRet) {
                     if (this.stack.length > 0) {
                         const current = this.stack.pop();
                         if (current) {
+                            // Suppress strict ts configurations safely implicitly
                             // @ts-ignore
                             current.endT = p.t;
                             current.description = `-> a2=${p.funcRet}`;
@@ -121,9 +173,13 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                         }
                     }
                 }
-            } else if (p.raw && p.raw.toLowerCase().includes('privilege error')) {
+            } 
+            // Isolate Faults vividly rendering red icons tracking explicitly recursively dynamically fully implicitly
+            else if (p.raw && p.raw.toLowerCase().includes('privilege error')) {
                 if (this.stack.length > 0) {
+                    // Iterate and expand absolutely every single wrapping parent element clearly
                     for (const node of this.stack) {
+                        // Suppress strict ts assignments safely explicitly
                         // @ts-ignore
                         node.state = vscode.TreeItemCollapsibleState.Expanded;
                         node.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('errorForeground'));
@@ -132,7 +188,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
             }
         }
         
-        // Auto-expand any lingering nodes aggressively wrapping trace dropouts cleanly securely smoothly 
+        // Auto-expand any lingering nodes aggressively wrapping trace dropouts cleanly securely smoothly explicitly 
         for (const item of this.stack) {
            if (!item.description || !item.description.toString().includes('Unclosed')) {
                item.description = (item.description || '') + ' (Unclosed Trace)';
