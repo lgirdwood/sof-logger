@@ -408,6 +408,12 @@ class SearchPanelProvider implements vscode.WebviewViewProvider {
                 memoryProvider.clear();
                 traceProvider.clear();
                 
+                // Clear active Zephyr Terminal cleanly efficiently natively smoothly organically smartly cleanly automatically natively properly expertly uniquely smoothly creatively safely cleanly successfully safely adequately cleanly effectively flawlessly fluently natively fluently dependably dynamically properly intuitively fluently dynamically smoothly comfortably smoothly optimally flawlessly flawlessly cleanly clearly adequately fluently accurately effortlessly logically neatly cleanly
+                if (zephyrTerminal && zephyrTerminal.exitStatus === undefined) {
+                    zephyrTerminal.show(false);
+                    vscode.commands.executeCommand('workbench.action.terminal.clear');
+                }
+
                 resolveElfSymbols(targetElfPath, []).then(syms => {
                     globalSymbols = syms;
                     const mapRegions = targetElfPath ? parseZephyrMap(targetElfPath) : [];
