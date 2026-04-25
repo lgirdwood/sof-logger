@@ -29,21 +29,31 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
             const addrStr = match[0];
             const addr = parseInt(addrStr, 16);
             if (!isNaN(addr) && globalSymbols.length > 0) {
-                let closestSymbol = null;
-                for (const sym of globalSymbols) {
-                    if (sym.size > 0 && addr >= sym.addr && addr < sym.addr + sym.size) {
-                        closestSymbol = sym;
-                        break;
+                let low = 0, high = globalSymbols.length - 1;
+                let closestIndex = -1;
+                while (low <= high) {
+                    const mid = Math.floor((low + high) / 2);
+                    if (globalSymbols[mid].addr <= addr) {
+                        closestIndex = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
                     }
                 }
-                if (closestSymbol) {
-                    const offset = addr - closestSymbol.addr;
-                    links.push({
-                        startIndex: match.index,
-                        length: match[0].length,
-                        tooltip: `Symbol: ${closestSymbol.name} + 0x${offset.toString(16).toUpperCase()}\nSection: .${closestSymbol.sect}\nSize: ${closestSymbol.size} Bytes\n(Ctrl+Click to Open Source)`,
-                        targetData: { file: closestSymbol.file, line: closestSymbol.line }
-                    } as any);
+
+                if (closestIndex !== -1) {
+                    const sym = globalSymbols[closestIndex];
+                    // Strict bounding if size exists, otherwise permissive association up to 4KB offset for zero-sized ASM blocks
+                    if ((sym.size > 0 && addr < sym.addr + sym.size) || (sym.size === 0 && addr - sym.addr < 4096)) {
+                        const offset = addr - sym.addr;
+                        const sizeStr = sym.size > 0 ? `${sym.size} Bytes` : 'Unknown (ASM)';
+                        links.push({
+                            startIndex: match.index,
+                            length: match[0].length,
+                            tooltip: `Symbol: ${sym.name} + 0x${offset.toString(16).toUpperCase()}\nSection: .${sym.sect}\nSize: ${sizeStr}\n(Ctrl+Click to Open Source)`,
+                            targetData: { file: sym.file, line: sym.line }
+                        } as any);
+                    }
                 }
             }
         }

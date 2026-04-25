@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 
 export class MemoryItem extends vscode.TreeItem {
+    public addr?: number;
+    public size?: number;
     constructor(
         public readonly label: string,
         public readonly collapsibleState: vscode.TreeItemCollapsibleState,
@@ -198,11 +200,14 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                 });
                 
                 const displayLabel = `[0x${alloc.addr.toString(16).toUpperCase()}] ${alloc.visualName || alloc.name}`;
-                return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, details, chainItems, `alloc_${alloc.addr}_${alloc.name}`, {
+                const item = new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.Collapsed, details, chainItems, `alloc_${alloc.addr}_${alloc.name}`, {
                     command: 'sof-logger.openResource',
                     title: 'Open Source',
                     arguments: [alloc.file, alloc.line, undefined, undefined, alloc.addr]
                 });
+                item.addr = alloc.addr;
+                item.size = alloc.size;
+                return item;
             });
             
             this.rootItems.push(new MemoryItem('Heap (Dynamic)', vscode.TreeItemCollapsibleState.Expanded, `${this.finalHeapAllocs.length} Objects`, dynChildren, 'root_heap_dyn'));
@@ -253,11 +258,14 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
                const children = regionGroups[gName].sort((a: any, b: any) => a.addr - b.addr).map((sym: any) => {
                    const details = `Size: ${sym.size} B`;
                    const displayLabel = `[0x${sym.addr.toString(16).toUpperCase()}] ${sym.name}`;
-                   return new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `seg_${sym.addr}_${sym.name}`, {
+                   const item = new MemoryItem(displayLabel, vscode.TreeItemCollapsibleState.None, details, undefined, `seg_${sym.addr}_${sym.name}`, {
                         command: 'sof-logger.openResource',
                         title: 'Open Source',
                         arguments: [sym.file, sym.line, undefined, undefined, sym.addr]
                    });
+                   item.addr = sym.addr;
+                   item.size = sym.size;
+                   return item;
                });
                
                this.cachedStaticItems!.push(new MemoryItem(`${gName} Segment (${regionGroups[gName].length})`, vscode.TreeItemCollapsibleState.Collapsed, undefined, children, `root_seg_${gName}`));
@@ -284,8 +292,17 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
     }
 
     private filterItem(item: MemoryItem): MemoryItem | null {
+        let matchesAddressRange = false;
+        if (this.searchString.startsWith('0x')) {
+            const searchAddr = parseInt(this.searchString, 16);
+            if (!isNaN(searchAddr) && item.addr !== undefined && item.size !== undefined) {
+                matchesAddressRange = (searchAddr >= item.addr && searchAddr < (item.addr + item.size));
+            }
+        }
+
         const matchesSelf = item.label.toLowerCase().includes(this.searchString) || 
-                            (item.details && item.details.toLowerCase().includes(this.searchString));
+                            (item.details && item.details.toLowerCase().includes(this.searchString)) ||
+                            matchesAddressRange;
         
         if (!item.children || item.children.length === 0) {
             return matchesSelf ? item : null;
