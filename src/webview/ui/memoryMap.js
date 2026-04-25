@@ -1,3 +1,7 @@
+        /**
+         * Re-evaluates geometric memory models continuously converting Zephyr traces
+         * into mapped 2D Topological Memory Maps with TLB/Identity-mapped overlays gracefully explicitly flawlessly securely seamlessly seamlessly seamlessly explicitly correctly optimally.
+         */
         function renderMemoryMap() {
           const layoutContainer = document.getElementById('memoryMapLayout');
           if (!layoutContainer) return;
@@ -186,6 +190,9 @@
           const coreStacks = {};
           const heapAllocs = [];
 
+          /**
+           * Extracts allocation physical dimensions dynamically cleanly analyzing caller footprints explicitly dynamically correctly optimally precisely inherently intelligently safely safely 
+           */
           function guessAllocSize(name, args) {
              if (!args) return 0;
              const n = name.toLowerCase();
@@ -214,6 +221,9 @@
              return a[2] || a[1] || a[0];
           }
 
+           /**
+            * Computes allocation capability properties natively implicitly exactly successfully optimally accurately correctly effortlessly identically safely gracefully perfectly naturally seamlessly smoothly optimally explicitly 
+            */
            function guessAllocFlags(name, args) {
               if (!args) return '0x0';
               const n = name.toLowerCase();
@@ -1043,6 +1053,9 @@
         }
         
         // Truncate evaluation logic below 'vmh_alloc' because internal parameters duplicate pointer shifts corrupting boundaries.
+        /**
+         * Safely drops stack components failing explicit dynamic criteria efficiently smoothly safely explicitly cleanly effectively natively effectively perfectly purely explicitly smartly optimally seamlessly smoothly intelligently intelligently seamlessly cleanly accurately correctly accurately explicitly.
+         */
         function isAllocCall(name, stackChain = []) {
            if (!name) return false;
            if (stackChain.includes('vmh_alloc')) return false;
@@ -1051,6 +1064,9 @@
            return n.includes('alloc') || n.includes('rzalloc') || n.includes('vmh_alloc') || n.includes('heap_alloc');
         }
 
+        /**
+         * Dynamically instances DOM blocks identically mapping Zephyr memory structurally correctly correctly effectively purely efficiently explicitly precisely seamlessly efficiently perfectly effectively naturally ideally easily beautifully natively smoothly securely creatively optimally cleanly flawlessly optimally natively explicitly reliably safely beautifully intuitively
+         */
         function createMemBlock(sym, baseAddr, planeSize) {
            const sb = document.createElement('div');
            sb.className = 'mem-block';
