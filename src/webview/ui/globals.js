@@ -23,6 +23,14 @@ function filterExceptionsChange(selectElem) {
     }
 }
 
+window.flashState = false;
+setInterval(() => {
+    window.flashState = !window.flashState;
+    if (window.myChart && logData && logData.some(d => d.isZephyrFatal)) {
+        window.myChart.update('none');
+    }
+}, 500);
+
 
 /**
  * Primary Message Receiver intercepting completely everything securely piped internally down from the extension process flawlessly.
@@ -48,10 +56,10 @@ window.addEventListener('message', event => {
         const umData = logData.map(d => ({ x: d.t / timeFactor, y: d.um }));
         const ringData = logData.map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
         const intLevelData = logData.map(d => ({ x: d.t / timeFactor, y: d.intLevel }));
-        const callDepthData = logData.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType, raw: d.raw }));
+        const callDepthData = logData.map(d => ({ x: d.t / timeFactor, y: d.callDepth, exc: d.excCause, tlbType: d.tlbType, ioType: d.ioType, isZephyrFatal: d.isZephyrFatal, raw: d.raw }));
         
-        // Locate privilege fault errors extracting them explicitly out purely securely securely avoiding generic plotting
-        const exceptionData = logData.filter(d => d.raw && d.raw.toLowerCase().includes('privilege error')).map(d => ({ x: d.t / timeFactor, y: d.ring, raw: d.raw }));
+// Locate privilege fault errors extracting them explicitly out purely securely securely avoiding generic plotting
+        const exceptionData = logData.filter(d => (d.raw && d.raw.toLowerCase().includes('privilege error')) || d.isZephyrFatal).map(d => ({ x: d.t / timeFactor, y: (d.ring !== undefined ? d.ring : 0), isZephyrFatal: d.isZephyrFatal, exc: d.excCause, raw: d.raw }));
 
         // Evaluate sequential metrics exclusively plotting derivative changes mathematically eliminating absolute climbs
         const iMissData = logData.map((d, i, arr) => {

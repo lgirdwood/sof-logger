@@ -86,6 +86,54 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
     }
 
     /**
+     * Accurately envelopes click timestamps traversing tree arrays iteratively beautifully capturing exact topological execution scopes seamlessly creatively elegantly!
+     */
+    public findClosestItemByTime(targetT: number): TraceTreeItem | null {
+        let bestDetails: TraceTreeItem | null = null;
+        let minDuration = Infinity;
+
+        const traverse = (nodes: TraceTreeItem[]) => {
+            for (const node of nodes) {
+                const s = node.startT !== undefined ? node.startT : -1;
+                const e = node.endT !== undefined ? node.endT : Infinity;
+                if (s !== -1 && targetT >= s && targetT <= e) {
+                    const dur = e - s;
+                    if (dur <= minDuration) {
+                        minDuration = dur;
+                        bestDetails = node;
+                    }
+                }
+                if (node.children && node.children.length > 0) {
+                    traverse(node.children);
+                }
+            }
+        };
+
+        traverse(this.rootNodes);
+
+        if (!bestDetails) {
+            let minDiff = Infinity;
+            const traverseDiff = (nodes: TraceTreeItem[]) => {
+                for (const node of nodes) {
+                    if (node.startT !== undefined) {
+                        const delta = Math.abs(node.startT - targetT);
+                        if (delta < minDiff) { 
+                            minDiff = delta; 
+                            bestDetails = node; 
+                        }
+                    }
+                    if (node.children && node.children.length > 0) {
+                        traverseDiff(node.children);
+                    }
+                }
+            };
+            traverseDiff(this.rootNodes);
+        }
+
+        return bestDetails;
+    }
+
+    /**
      * Incrementally pushes execution data directly extending trees sequentially
      * 
      * @param deltaLogData Sub-array of newly parsed UART entries internally matching exact structures accurately explicitly

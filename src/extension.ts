@@ -628,6 +628,14 @@ export function activate(context: vscode.ExtensionContext) {
               });
             });
           }
+         } else if (message.command === 'chartClick') {
+              const clickT = message.t !== undefined ? message.t : (message.point && message.point.x ? message.point.x * 38420000.0 : undefined);
+              if (clickT !== undefined) {
+                  const traceItem = traceProvider.findClosestItemByTime(clickT);
+                  if (traceItem && sofTraceTreeView) {
+                      sofTraceTreeView.reveal(traceItem, { select: true, focus: true, expand: true }).then(()=>{}, ()=>{});
+                  }
+              }
          }
       }
       

@@ -14,6 +14,7 @@ export interface LogDataPoint {
   intLevel?: number;          // Native interrupt hardware masking levels
   excCause?: number;          // Xtensa EXCCAUSE execution termination signals
   excVaddr?: string;          // Extracted Exception Faulting Address natively dynamically logically
+  isZephyrFatal?: boolean;    // Explicitly flags hardware termination logs logically
   tlbType?: 'I' | 'D';        // TLB type: Instruction or Data
   tlbDetails?: string;        // Explicit string detailing TLB metadata
   ioType?: 'read' | 'write';  // Hardware IO execution bounds natively
@@ -87,7 +88,13 @@ export class IncrementalLogParser {
   private parsedRegions: MemoryRegion[] = [];
   private parsedSramTopologies: SramTopology[] = [];
 
+  private isUnwindingFatalStack: boolean = false;
+
   // Central mapping RegExp sequences optimizing extraction stringently
+  private zephyrFatalRegex = /ZEPHYR FATAL ERROR/i;
+  private regDumpRegex = /pc=(0x[0-9a-fA-F]+)\s+a0=(0x[0-9a-fA-F]+)/i;
+  private stackDumpRegex = /^\s*(0x[0-9a-fA-F]{8})(?:\s+(0x[0-9a-fA-F]{8}))?/i;
+
   private tRegex = /^\[(?:c:\d+\s+)?T:(0x[0-9a-fA-F]+)(?:\s+C:(0x[0-9a-fA-F]+))?/;
   private psRegex = /\b(?:ps|PS)\s*=\s*(0x[0-9a-fA-F]+)/;
   private missRegex = /Imiss=(\d+)\s+Dmiss=(\d+)/i;
@@ -174,6 +181,7 @@ export class IncrementalLogParser {
 
         let changed = false;
         let currentExc: number | null = null;
+        let isCurrentFatal: boolean = false;
         let currentTlbType: 'I' | 'D' | null = null;
         let currentTlbDetails: any = null;
         let currentIoType: 'read' | 'write' | null = null;
@@ -207,12 +215,20 @@ export class IncrementalLogParser {
         }
 
         // Interrupt / Exception Cause mapping natively capturing Privilege Faults explicitly
-        const excMatch = line.match(this.excRegex);
-        if (excMatch) {
-          currentExc = parseInt(excMatch[1], 10);
-          changed = true;
-        } else if (line.toLowerCase().includes('privilege error')) {
-          changed = true;
+        const zephyrFatalMatch = line.match(this.zephyrFatalRegex);
+        if (zephyrFatalMatch) {
+            currentExc = 63; // Map directly implicitly bypassing undefined capture structurally safely seamlessly
+            isCurrentFatal = true;
+            this.isUnwindingFatalStack = true;
+            changed = true;
+        } else {
+            const excMatch = line.match(this.excRegex);
+            if (excMatch) {
+              currentExc = parseInt(excMatch[1], 10);
+              changed = true;
+            } else if (line.toLowerCase().includes('privilege error')) {
+              changed = true;
+            }
         }
 
         const vaddrMatch = line.match(this.vaddrRegex);
@@ -233,6 +249,21 @@ export class IncrementalLogParser {
           currentFuncAddr = parseInt(entryMatch[1], 16);
           currentFuncSp = entryMatch[2];
           currentFuncArgs = [entryMatch[4], entryMatch[5], entryMatch[6], entryMatch[7], entryMatch[8], entryMatch[9]];
+        } else if (this.isUnwindingFatalStack) {
+          const regDumpMatch = line.match(this.regDumpRegex);
+          if (regDumpMatch) {
+            this.currentCallDepth = Math.max(0, this.currentCallDepth - 1);
+            changed = true;
+            currentFuncAddr = parseInt(regDumpMatch[2], 16);
+            currentFuncRet = regDumpMatch[1];
+          } else {
+            const stackDumpMatch = line.match(this.stackDumpRegex);
+            if (stackDumpMatch && this.currentCallDepth > 0) {
+              this.currentCallDepth = Math.max(0, this.currentCallDepth - 1);
+              changed = true;
+              currentFuncRet = stackDumpMatch[1];
+            }
+          }
         } else {
           const retMatch = line.match(this.funcRetRegex);
           if (retMatch) {
@@ -317,6 +348,7 @@ export class IncrementalLogParser {
             dMiss: this.currentDMiss !== null ? this.currentDMiss : undefined,
             callDepth: this.currentCallDepth,
             excCause: currentExc !== null ? currentExc : undefined,
+            isZephyrFatal: isCurrentFatal ? true : undefined,
             c: this.currentC !== null ? this.currentC : undefined,
             tlbType: currentTlbType !== null ? currentTlbType : undefined,
             tlbDetails: currentTlbDetails !== null ? currentTlbDetails : undefined,

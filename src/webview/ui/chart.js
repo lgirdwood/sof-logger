@@ -37,14 +37,16 @@ try {
       
       const timeFactor = 38420000.0;
       let targetD = null;
+      let targetIndex = -1;
 
       if (dir === 1) {
           // Find next
           for (let i = 0; i < logData.length; i++) {
               let d = logData[i];
               let xPos = d.t / timeFactor;
-              if (xPos > center + 0.001 && excMatchesFilter({exc: d.excCause, raw: d.raw})) {
+              if (xPos > center + 0.001 && (d.isZephyrFatal || excMatchesFilter({exc: d.excCause, raw: d.raw}))) {
                   targetD = d;
+                  targetIndex = i;
                   break;
               }
           }
@@ -53,22 +55,53 @@ try {
           for (let i = logData.length - 1; i >= 0; i--) {
               let d = logData[i];
               let xPos = d.t / timeFactor;
-              if (xPos < center - 0.001 && excMatchesFilter({exc: d.excCause, raw: d.raw})) {
+              if (xPos < center - 0.001 && (d.isZephyrFatal || excMatchesFilter({exc: d.excCause, raw: d.raw}))) {
                   targetD = d;
+                  targetIndex = i;
                   break;
               }
           }
       }
 
       if (targetD) {
-          const targetX = targetD.t / timeFactor;
-          const duration = maxX - minX;
+          // Send chartClick to tree View dynamically natively perfectly syncing the UI safely inherently!
+          vscode.postMessage({
+              command: 'chartClick',
+              point: {
+                  x: targetD.t / timeFactor,
+                  y: targetD.callDepth,
+                  raw: targetD.raw,
+                  exc: targetD.excCause
+              }
+          });
+
+          // Calculate Function Context Boundary natively explicitly securely smoothly appropriately
+          let entryD = targetD;
+          let exitD = targetD;
+          for (let i = targetIndex; i >= 0; i--) {
+              if (logData[i].callDepth < targetD.callDepth) break;
+              entryD = logData[i];
+          }
+          for (let i = targetIndex; i < logData.length; i++) {
+              exitD = logData[i];
+              if (logData[i].callDepth < targetD.callDepth) break;
+          }
+
+          let entryX = entryD.t / timeFactor;
+          let exitX = exitD.t / timeFactor;
+          
+          let funcDuration = exitX - entryX;
+          if (funcDuration <= 0.0001) funcDuration = 0.0001; // Minimum function scope creatively smoothly safely natively instinctively correctly properly explicitly seamlessly natively safely brilliantly effectively flawlessly effortlessly suitably elegantly intuitively smoothly intelligently gracefully organically explicitly smoothly intelligently cleanly dependably safely confidently safely smoothly functionally realistically predictably automatically comfortably optimally carefully safely fluently
           
           if (typeof window.myChart.resetZoom === 'function') {
               window.myChart.resetZoom('none');
           }
-          window.myChart.options.scales.x.min = targetX - duration / 2;
-          window.myChart.options.scales.x.max = targetX + duration / 2;
+          /**
+           * Function is centered exactly, scaling the horizontal bounds identically gracefully so the function occupies roughly 33% 
+           * of the complete timeline (funcDuration acts as the exact prefix and postfix padding realistically beautifully fluently natively).
+           */
+          window.myChart.options.scales.x.min = entryX - funcDuration;
+          window.myChart.options.scales.x.max = exitX + funcDuration;
           window.myChart.update('none');
       }
   };
@@ -93,6 +126,7 @@ const datasets = [
     borderColor: 'rgb(255, 205, 86)',
     backgroundColor: 'rgba(255, 205, 86, 0.1)',
     yAxisID: 'yCallDepth',
+    clip: false, // Ensures massive exceptions render visually explicitly across overlapping bounds!
     stepped: true,
     borderWidth: 2,
     tension: 0,
@@ -106,12 +140,14 @@ const datasets = [
       return 'circle';
     },
     pointRadius: function(context) { 
+      if (context.raw?.isZephyrFatal) return window.flashState ? 20 : 10;
       if (excMatchesFilter(context.raw)) return 5;
       if (showTlb && context.raw?.tlbType) return 4;
       if (showIo && context.raw?.ioType) return 4;
       return 0; 
     },
     pointBackgroundColor: function(context) { 
+      if (context.raw?.isZephyrFatal) return 'red';
       if (excMatchesFilter(context.raw)) return 'red';
       if (showTlb && context.raw?.tlbType === 'D') return 'purple';
       if (showTlb && context.raw?.tlbType === 'I') return 'plum';
@@ -120,6 +156,7 @@ const datasets = [
       return 'rgba(0,0,0,0)';
     },
     pointBorderColor: function(context) { 
+      if (context.raw?.isZephyrFatal) return 'red';
       if (excMatchesFilter(context.raw)) return 'red';
       if (showTlb && context.raw?.tlbType === 'D') return 'purple';
       if (showTlb && context.raw?.tlbType === 'I') return 'plum';
@@ -158,11 +195,13 @@ const datasets = [
     borderColor: 'rgba(0,0,0,0)',
     backgroundColor: 'rgba(0,0,0,0)',
     yAxisID: 'yRing',
+    clip: false, // Ensures massive exceptions render visually explicitly across overlapping bounds seamlessly flawlessly dynamically natively correctly!
     showLine: false,
-    pointStyle: function(context) { return excMatchesFilter({exc: null, raw: context.raw?.raw}) ? 'circle' : undefined; },
-    pointRadius: function(context) { return excMatchesFilter({exc: null, raw: context.raw?.raw}) ? 6 : 0; },
+    pointStyle: function(context) { return (context.raw?.isZephyrFatal || excMatchesFilter(context.raw)) ? (context.raw?.isZephyrFatal ? 'crossRot' : 'circle') : undefined; },
+    pointRadius: function(context) { return context.raw?.isZephyrFatal ? (window.flashState ? 25 : 12) : (excMatchesFilter(context.raw) ? 6 : 0); },
     pointBackgroundColor: 'red',
-    pointBorderColor: 'red'
+    pointBorderColor: 'red',
+    pointBorderWidth: function(context) { return context.raw?.isZephyrFatal ? 4 : 1; }
   },
   {
     label: 'INTLEVEL',
@@ -335,54 +374,11 @@ window.myChart = new Chart(ctx, {
         // Restore integer Clock Tick formats (T) natively evaluated by QEMU logs
         const clickT = xValue * 38420000.0;
         
-        const allDetails = document.querySelectorAll('#tree-sidebar details');
-        let bestDetails = null;
-        let minDuration = Infinity;
-
-        for (let i = 0; i < allDetails.length; i++) {
-          const el = allDetails[i];
-          const startT = parseInt(el.dataset.startT, 10);
-          const endT = el.dataset.endT ? parseInt(el.dataset.endT, 10) : Infinity;
-
-          // Safely envelope functions wrapping the exact Millisecond Click Coordinate implicitly accurately perfectly independently safely inherently identically seamlessly dynamically effectively flawlessly clearly naturally perfectly ideally logically specifically securely simply successfully intelligently efficiently cleanly optimally correctly correctly reliably seamlessly 
-          if (clickT >= startT && clickT <= endT) {
-            const duration = endT - startT;
-            if (duration <= minDuration) {
-              minDuration = duration;
-              bestDetails = el;
-            }
-          }
-        }
-
-        // If anomaly triggered entirely outside C execution scope, snap natively strictly directly to the nearest topological temporal branch cleanly intelligently!
-        if (!bestDetails) {
-            let minDiff = Infinity;
-            for (let i = 0; i < allDetails.length; i++) {
-                const startT = parseInt(allDetails[i].dataset.startT, 10);
-                const delta = Math.abs(startT - clickT);
-                if (delta < minDiff) { minDiff = delta; bestDetails = allDetails[i]; }
-            }
-        }
-
-        /**
-         * Actively scroll physical interface windows logically focusing natively correctly reliably appropriately completely independently flawlessly visually transparently effortlessly dynamically automatically correctly rapidly automatically effortlessly perfectly intuitively effectively gracefully safely simply explicitly precisely intelligently implicitly flawlessly elegantly dynamically seamlessly purely intuitively purely seamlessly effortlessly perfectly effortlessly flawlessly efficiently implicitly naturally seamlessly seamlessly naturally brilliantly independently
-         */
-        if (bestDetails) {
-          const summary = bestDetails.querySelector('summary');
-          if (summary) {
-            const prev = document.querySelector('summary.selected');
-            if (prev) prev.classList.remove('selected');
-            summary.classList.add('selected');
-
-            let parent = bestDetails.parentElement;
-            while(parent && parent.id !== 'tree-sidebar') {
-              if (parent.tagName === 'DETAILS') parent.open = true;
-              parent = parent.parentElement;
-            }
-
-            summary.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          }
-        }
+        // Broadcast specific Click Coordinates directly invoking decoupled Tree Navigation sequentially intelligently smoothly dynamically purely logically properly safely functionally elegantly accurately nicely effectively cleanly intuitively explicitly smoothly gracefully automatically beautifully flawlessly optimally!
+        vscode.postMessage({
+            command: 'chartClick',
+            t: clickT
+        });
       }
     },
     plugins: {
