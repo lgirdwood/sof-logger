@@ -3,7 +3,17 @@
         <h2>QEMU Log Execution</h2>
         <button onclick="resetZoom()">Reset Zoom</button>
         <button id="toggleExceptionsBtn" onclick="toggleExceptions()">Toggle Exceptions (On)</button>
-        <button id="toggleTlbBtn" onclick="toggleTlb()">Toggle TLB Events (On)</button>
+        <select id="excFilterSelect" onchange="filterExceptionsChange(this)" style="margin-left: 10px; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground); border: 1px solid var(--vscode-dropdown-border); padding: 4px; border-radius: 2px;">
+            <option value="all">All Exceptions</option>
+            <option value="0">0: Illegal Instruction</option>
+            <option value="1">1: Syscall (IPC)</option>
+            <option value="3">3: Load/Store Error</option>
+            <option value="26">26: LoadStore Privilege</option>
+            <option value="63">63: Zephyr Fatal Exception</option>
+        </select>
+        <button onclick="jumpException(-1)" style="margin-left: 5px;">&lt; Prev</button>
+        <button onclick="jumpException(1)">Next &gt;</button>
+        <button id="toggleTlbBtn" onclick="toggleTlb()" style="margin-left: 10px;">Toggle TLB Events (On)</button>
         <button id="toggleIoBtn" onclick="toggleIo()">Toggle ACE IO (On)</button>
         <div id="memory-map-legend" style="display: none; align-items: center; gap: 15px; margin-left: 20px; flex-wrap: wrap;">
           <div style="display: flex; align-items: center; gap: 5px;"><div style="width: 14px; height: 14px; background-color: rgba(211, 47, 47, 0.9); border: 1px solid rgba(255,255,255,0.4); border-radius: 3px;"></div><span style="font-size: 12px;">Heap Allocations</span></div>

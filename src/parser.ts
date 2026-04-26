@@ -13,6 +13,7 @@ export interface LogDataPoint {
   ring?: number;              // Privilege Ring Execution level
   intLevel?: number;          // Native interrupt hardware masking levels
   excCause?: number;          // Xtensa EXCCAUSE execution termination signals
+  excVaddr?: string;          // Extracted Exception Faulting Address natively dynamically logically
   tlbType?: 'I' | 'D';        // TLB type: Instruction or Data
   tlbDetails?: string;        // Explicit string detailing TLB metadata
   ioType?: 'read' | 'write';  // Hardware IO execution bounds natively
@@ -80,6 +81,7 @@ export class IncrementalLogParser {
   private currentCallDepth = 0;
   private currentT = 0;
   private currentC: number | null = null;
+  private lastExceptionPoint: LogDataPoint | null = null;
 
   // Statically tracked topologies collected throughout early execution frames
   private parsedRegions: MemoryRegion[] = [];
@@ -92,7 +94,8 @@ export class IncrementalLogParser {
   // Execution constraints evaluating nested arguments rigorously
   private funcEntryRegex = /FUNC ENTRY:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+a2=(0x[0-9a-fA-F]+)\s+a3=(0x[0-9a-fA-F]+)\s+a4=(0x[0-9a-fA-F]+)\s+a5=(0x[0-9a-fA-F]+)\s+a6=(0x[0-9a-fA-F]+)\s+a7=(0x[0-9a-fA-F]+)/;
   private funcRetRegex = /FUNC RET:\s*pc=(0x[0-9a-fA-F]+)\s+sp=(0x[0-9a-fA-F]+)\s+ps=(0x[0-9a-fA-F]+)\s+(?:ret|a2)=(0x[0-9a-fA-F]+)/;
-  private excRegex = /EXCCAUSE\s*=\s*(\d+)/;
+  private excRegex = /EXCCAUSE\s*=?\s*(\d+)/i;
+  private vaddrRegex = /\bVADDR\s*=?\s*(0x[0-9a-fA-F]+)/i;
   private tlbRegex = /\bTLB\s+([ID])\s+(.*)/i;
   private ioRegex = /\b([A-Za-z0-9_]+)\s+(read|write):\s+(.*)/i;
   private firmwareRegex = /Loading\s+DSP\s+Firmware:\s+(.+)/i;
@@ -212,6 +215,11 @@ export class IncrementalLogParser {
           changed = true;
         }
 
+        const vaddrMatch = line.match(this.vaddrRegex);
+        if (vaddrMatch && this.lastExceptionPoint) {
+            this.lastExceptionPoint.excVaddr = vaddrMatch[1];
+        }
+
         let currentFuncAddr: number | null = null;
         let currentFuncArgs: string[] | null = null;
         let currentFuncRet: string | null = null;
@@ -300,7 +308,7 @@ export class IncrementalLogParser {
 
         // Compile distinct structured point matching exclusively modified nodes avoiding redundant empty loops
         if (changed) {
-          dataPoints.push({
+          const pt: LogDataPoint = {
             t: this.currentT,
             um: this.currentUM !== null ? this.currentUM : undefined,
             ring: this.currentRing !== null ? this.currentRing : undefined,
@@ -320,7 +328,11 @@ export class IncrementalLogParser {
             funcArgs: changed && currentFuncArgs !== null ? currentFuncArgs : undefined,
             funcRet: changed && currentFuncRet !== null ? currentFuncRet : undefined,
             raw: line
-          });
+          };
+          if (currentExc !== null || line.toLowerCase().includes('privilege error')) {
+              this.lastExceptionPoint = pt;
+          }
+          dataPoints.push(pt);
         }
       }
     } catch (ioErr) {

@@ -15,6 +15,64 @@ function initChartAndUI(cDeltaData, callDepthData, umData, ringData, exceptionDa
 try {
   const ctx = document.getElementById('logChart').getContext('2d');
 
+  function excMatchesFilter(rawObj) {
+      if (!showExceptions || !rawObj) return false;
+      const cause = rawObj.exc;
+      const rawText = rawObj.raw;
+
+      if (cause === null || cause === undefined) {
+           if (rawText && rawText.toLowerCase().includes('privilege error')) {
+                return window.filterExceptionCause === 'all' || window.filterExceptionCause === '26';
+           }
+           return false;
+      }
+      return window.filterExceptionCause === 'all' || cause.toString() === window.filterExceptionCause;
+  }
+
+  window.jumpException = function(dir) {
+      if (!window.myChart || !logData || logData.length === 0) return;
+      const minX = window.myChart.options.scales.x.min;
+      const maxX = window.myChart.options.scales.x.max;
+      const center = (minX + maxX) / 2;
+      
+      const timeFactor = 38420000.0;
+      let targetD = null;
+
+      if (dir === 1) {
+          // Find next
+          for (let i = 0; i < logData.length; i++) {
+              let d = logData[i];
+              let xPos = d.t / timeFactor;
+              if (xPos > center + 0.001 && excMatchesFilter({exc: d.excCause, raw: d.raw})) {
+                  targetD = d;
+                  break;
+              }
+          }
+      } else {
+          // Find prev
+          for (let i = logData.length - 1; i >= 0; i--) {
+              let d = logData[i];
+              let xPos = d.t / timeFactor;
+              if (xPos < center - 0.001 && excMatchesFilter({exc: d.excCause, raw: d.raw})) {
+                  targetD = d;
+                  break;
+              }
+          }
+      }
+
+      if (targetD) {
+          const targetX = targetD.t / timeFactor;
+          const duration = maxX - minX;
+          
+          if (typeof window.myChart.resetZoom === 'function') {
+              window.myChart.resetZoom('none');
+          }
+          window.myChart.options.scales.x.min = targetX - duration / 2;
+          window.myChart.options.scales.x.max = targetX + duration / 2;
+          window.myChart.update('none');
+      }
+  };
+
 /**
  * Configure distinct graphical datasets accurately bounding execution metrics reliably intuitively
  */
@@ -42,19 +100,19 @@ const datasets = [
      * Map logical anomalies dynamically drawing diverse geometries over standard data lines implicitly explicitly effectively reliably appropriately natively gracefully flawlessly naturally correctly cleanly
      */
     pointStyle: function(context) {
-      if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 'circle';
+      if (excMatchesFilter(context.raw)) return 'circle';
       if (showTlb && context.raw?.tlbType) return 'triangle';
       if (showIo && context.raw?.ioType) return 'rect';
       return 'circle';
     },
     pointRadius: function(context) { 
-      if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 5;
+      if (excMatchesFilter(context.raw)) return 5;
       if (showTlb && context.raw?.tlbType) return 4;
       if (showIo && context.raw?.ioType) return 4;
       return 0; 
     },
     pointBackgroundColor: function(context) { 
-      if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 'red';
+      if (excMatchesFilter(context.raw)) return 'red';
       if (showTlb && context.raw?.tlbType === 'D') return 'purple';
       if (showTlb && context.raw?.tlbType === 'I') return 'plum';
       if (showIo && context.raw?.ioType === 'read') return 'green';
@@ -62,7 +120,7 @@ const datasets = [
       return 'rgba(0,0,0,0)';
     },
     pointBorderColor: function(context) { 
-      if (showExceptions && context.raw?.exc !== null && context.raw?.exc !== undefined) return 'red';
+      if (excMatchesFilter(context.raw)) return 'red';
       if (showTlb && context.raw?.tlbType === 'D') return 'purple';
       if (showTlb && context.raw?.tlbType === 'I') return 'plum';
       if (showIo && context.raw?.ioType === 'read') return 'green';
@@ -101,8 +159,8 @@ const datasets = [
     backgroundColor: 'rgba(0,0,0,0)',
     yAxisID: 'yRing',
     showLine: false,
-    pointStyle: 'circle',
-    pointRadius: 6,
+    pointStyle: function(context) { return excMatchesFilter({exc: null, raw: context.raw?.raw}) ? 'circle' : undefined; },
+    pointRadius: function(context) { return excMatchesFilter({exc: null, raw: context.raw?.raw}) ? 6 : 0; },
     pointBackgroundColor: 'red',
     pointBorderColor: 'red'
   },
@@ -354,8 +412,8 @@ window.myChart = new Chart(ctx, {
             if (context.dataset.label === 'Call Depth') {
               const d = logData[context.dataIndex];
               let base = '';
-              if (showExceptions && d.excCause !== null && d.excCause !== undefined) {
-                base = 'Exception: EXCCAUSE ' + d.excCause;
+              if (excMatchesFilter({exc: d.excCause, raw: d.raw})) {
+                base = 'Exception: EXCCAUSE ' + (d.excCause !== undefined && d.excCause !== null ? d.excCause : '26 (Privilege)') + (d.excVaddr ? ' (VADDR: ' + d.excVaddr + ')' : '');
               } else if (showTlb && d.tlbType) {
                 base = 'TLB ' + d.tlbType + ' ' + (d.tlbDetails || '');
               } else if (showIo && d.ioType) {

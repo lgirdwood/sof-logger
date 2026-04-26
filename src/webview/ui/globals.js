@@ -14,6 +14,16 @@ let showExceptions = true;
 let showTlb = true;
 let showIo = true;
 
+window.filterExceptionCause = 'all';
+
+function filterExceptionsChange(selectElem) {
+    window.filterExceptionCause = selectElem.value;
+    if (window.myChart) {
+        window.myChart.update('none');
+    }
+}
+
+
 /**
  * Primary Message Receiver intercepting completely everything securely piped internally down from the extension process flawlessly.
  */
