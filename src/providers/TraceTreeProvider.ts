@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 
+import { BaseTreeProvider, IBaseTreeItem } from './BaseTreeProvider';
+
 /**
  * Encapsulates a distinct hierarchical trace function natively mapping Zephyr stack ingress/egress.
  * Maintains chronological bounding variables implicitly wrapping temporal execution footprints seamlessly.
  */
-export class TraceTreeItem extends vscode.TreeItem {
+export class TraceTreeItem extends vscode.TreeItem implements IBaseTreeItem {
     public children: TraceTreeItem[] = []; // Explicit recursive dependency tree evaluating nested stack scopes securely
     public parent?: TraceTreeItem; // Bidirectional topological reference securely unlocking TreeView.reveal internally flawlessly
 
@@ -25,34 +27,15 @@ export class TraceTreeItem extends vscode.TreeItem {
 /**
  * Controller mapping sequential UART traces structurally against the VS Code left sidebar natively explicitly.
  */
-export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<TraceTreeItem | undefined | void> = new vscode.EventEmitter<TraceTreeItem | undefined | void>();
-    readonly onDidChangeTreeData: vscode.Event<TraceTreeItem | undefined | void> = this._onDidChangeTreeData.event;
-
-    // Active nodes currently rendering visually explicitly
-    private rootNodes: TraceTreeItem[] = [];
-    
+export class TraceTreeProvider extends BaseTreeProvider<TraceTreeItem> {
     // Lifo recursive scope implicitly tracking nested boundaries dynamically explicitly correctly seamlessly 
     private stack: TraceTreeItem[] = [];
-    
-    // Abstract query parameter constraining view outputs seamlessly explicitly correctly
-    private searchString: string = '';
-
-    /**
-     * Integrates string parameters natively refreshing graphical interfaces selectively rendering isolated blocks seamlessly
-     * 
-     * @param val Evaluated search parameter natively matching textual descriptors dynamically
-     */
-    setSearchString(val: string) {
-        this.searchString = val.toLowerCase();
-        this._onDidChangeTreeData.fire();
-    }
 
     /**
      * Resolves the deepest and most chronologically recent execution matched securely purely dynamically seamlessly explicit neatly seamlessly efficiently
      */
     public findLastExecutionByName(name: string): TraceTreeItem | null {
-        return this.searchRecursiveLast(this.rootNodes, name);
+        return this.searchRecursiveLast(this.rootItems, name);
     }
 
     /**
@@ -79,8 +62,8 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
             return this.stack[this.stack.length - 1];
         }
         // Fallback to absolute latest chronological root if stack is completely flushed identically safely correctly 
-        if (this.rootNodes && this.rootNodes.length > 0) {
-            return this.rootNodes[this.rootNodes.length - 1];
+        if (this.rootItems && this.rootItems.length > 0) {
+            return this.rootItems[this.rootItems.length - 1];
         }
         return null;
     }
@@ -109,7 +92,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
             }
         };
 
-        traverse(this.rootNodes);
+        traverse(this.rootItems);
 
         if (!bestDetails) {
             let minDiff = Infinity;
@@ -127,7 +110,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                     }
                 }
             };
-            traverseDiff(this.rootNodes);
+            traverseDiff(this.rootItems);
         }
 
         return bestDetails;
@@ -147,67 +130,24 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
      * Erases completely native tracking buffers dropping references flawlessly 
      */
     clear(): void {
-        this.rootNodes = [];
+        this.rootItems = [];
         this.stack = [];
         this._onDidChangeTreeData.fire();
     }
 
-    /**
-     * Core VS Code tree provider interface correctly
-     */
-    getTreeItem(element: TraceTreeItem): vscode.TreeItem {
-        return element;
+    protected evaluateMatch(item: TraceTreeItem, searchStr: string): boolean {
+        return Boolean(item.label.toLowerCase().includes(searchStr) || 
+               (item.description && typeof item.description === 'string' && item.description.toLowerCase().includes(searchStr)));
     }
 
-    /**
-     * UI expansion hook driving automated parent resolving dynamically smoothly purely gracefully intuitively neatly beautifully 
-     */
-    getParent(element: TraceTreeItem): vscode.ProviderResult<TraceTreeItem> {
-        return element.parent;
-    }
-
-    /**
-     * Resolves nodes hierarchically matching filters explicitly natively gracefully
-     */
-    getChildren(element?: TraceTreeItem): Thenable<TraceTreeItem[]> {
-        let items = element ? (element.children || []) : this.rootNodes;
-        if (this.searchString && items.length > 0) {
-            items = items.map(item => this.filterItem(item)).filter(item => item !== null) as TraceTreeItem[];
-        }
-        return Promise.resolve(items);
-    }
-
-    /**
-     * Internal string evaluator matching nested trace structures flawlessly bypassing dead paths dynamically seamlessly.
-     * 
-     * @param item Evaluated trace tree scope dynamically passed linearly natively
-     * @returns New duplicated node containing isolated path footprints perfectly
-     */
-    private filterItem(item: TraceTreeItem): TraceTreeItem | null {
-        // Expand matches capturing detailed metrics concurrently
-        const matchesSelf = item.label.toLowerCase().includes(this.searchString) || 
-                            (item.description && typeof item.description === 'string' && item.description.toLowerCase().includes(this.searchString));
-        
-        // Terminate at dead ends correctly
-        if (!item.children || item.children.length === 0) {
-            return matchesSelf ? item : null;
-        }
-
-        // Evaluate nested layers natively cleanly explicitly
-        const filteredChildren = item.children.map(child => this.filterItem(child)).filter(c => c !== null) as TraceTreeItem[];
-        
-        // Inherit path successfully opening parents completely seamlessly navigating explicit structures explicitly 
-        if (matchesSelf || filteredChildren.length > 0) {
-            const childrenToUse = matchesSelf ? item.children : filteredChildren;
-            const newItem = new TraceTreeItem(item.label, 
-                      matchesSelf ? item.state : vscode.TreeItemCollapsibleState.Expanded, 
-                      item.command, item.line, item.file, item.startT, item.endT);
-            newItem.description = item.description;
-            newItem.iconPath = item.iconPath;
-            newItem.children = childrenToUse;
-            return newItem;
-        }
-        return null;
+    protected cloneNode(item: TraceTreeItem, matchesSelf: boolean, childrenToUse: TraceTreeItem[]): TraceTreeItem {
+        const newItem = new TraceTreeItem(item.label, 
+                  matchesSelf ? item.state : vscode.TreeItemCollapsibleState.Expanded, 
+                  item.command, item.line, item.file, item.startT, item.endT);
+        newItem.description = item.description;
+        newItem.iconPath = item.iconPath;
+        newItem.children = childrenToUse;
+        return newItem;
     }
 
     /**
@@ -250,7 +190,7 @@ export class TraceTreeProvider implements vscode.TreeDataProvider<TraceTreeItem>
                         this.stack.push(item);
                     } else {
                         item.parent = undefined;
-                        this.rootNodes.push(item);
+                        this.rootItems.push(item);
                         this.stack.push(item);
                     }
                 } 

@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
 
+import { BaseTreeProvider, IBaseTreeItem } from './BaseTreeProvider';
+
 /**
  * Encapsulates a distinct Memory allocation or static topological segment inside the VS Code Treeview globally.
  * Implements bounds tracking evaluating exact nested boundaries for PC offsets seamlessly natively.
  */
-export class MemoryItem extends vscode.TreeItem {
+export class MemoryItem extends vscode.TreeItem implements IBaseTreeItem {
     public addr?: number;       // Exact numeric representation of natively allocated boundary origin
     public size?: number;       // Exact memory footprint consumed inside the execution subsystem dynamically
     public parent?: MemoryItem; // Bidirectional topological reference securely unlocking TreeView.reveal internally flawlessly
@@ -115,33 +117,14 @@ function guessAllocFlags(name: string, args: string[]): string {
 /**
  * Controller orchestrating interactive hierarchical expansions visually inside the VS Code editor constraints dynamically.
  */
-export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
-    private _onDidChangeTreeData: vscode.EventEmitter<MemoryItem | undefined | void> = new vscode.EventEmitter<MemoryItem | undefined | void>();
-    readonly onDidChangeTreeData: vscode.Event<MemoryItem | undefined | void> = this._onDidChangeTreeData.event;
-
+export class MemoryTreeProvider extends BaseTreeProvider<MemoryItem> {
     // Ephemeral dynamic arrays capturing ongoing internal execution states linearly matching logic constraints
     private coreStacks: { [key: number]: any[] } = {};
     private heapAllocs: any[] = [];
     private finalHeapAllocs: any[] = [];
     
-    // Processed rendering models directly driving the graphical UI dynamically
-    private rootItems: MemoryItem[] = [];
-    
     // Persistent structural layout preventing ELF wiping operations seamlessly across log resets
     private cachedStaticItems: MemoryItem[] | null = null;
-    
-    // Iterative searching parameter exclusively limiting memory item footprints seamlessly
-    private searchString: string = '';
-
-    /**
-     * Integrates string parameters natively refreshing graphical interfaces selectively rendering isolated blocks seamlessly
-     * 
-     * @param val Evaluated search parameter natively matching textual descriptors or structural addresses dynamically
-     */
-    setSearchString(val: string) {
-        this.searchString = val.toLowerCase();
-        this._onDidChangeTreeData.fire();
-    }
 
     /**
      * Executes internal resets avoiding destructive wipes strictly maintaining static cached allocations securely.
@@ -382,20 +365,6 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
     }
 
     /**
-     * Interface execution returning logically isolated nodes natively mapping Visual code parameters flawlessly.
-     */
-    getTreeItem(element: MemoryItem): vscode.TreeItem {
-        return element;
-    }
-    
-    /**
-     * VS Code topological execution resolving nested traces exclusively implicitly creatively automatically perfectly natively smoothly.
-     */
-    getParent(element: MemoryItem): vscode.ProviderResult<MemoryItem> {
-        return element.parent;
-    }
-
-    /**
      * Resolves bounds constraints matching strict execution arguments evaluating the tightest nested boundary effectively intelligently uniquely optimally properly effortlessly clearly implicitly softly adequately logically safely explicitly cleverly efficiently optimally seamlessly natively perfectly intuitively successfully.
      */
     public findNodeByAddress(addr: number): MemoryItem | null {
@@ -428,51 +397,28 @@ export class MemoryTreeProvider implements vscode.TreeDataProvider<MemoryItem> {
         return bestMatch;
     }
 
-    /**
-     * Returns explicitly bounded execution trees gracefully masking extraneous variables dynamically natively.
-     */
-    getChildren(element?: MemoryItem): Thenable<MemoryItem[]> {
-        let items = element ? (element.children || []) : this.rootItems;
-        // Apply recursive filter explicitly isolating valid structures seamlessly hiding irrelevant noise accurately natively
-        if (this.searchString && items.length > 0) {
-            items = items.map(item => this.filterItem(item)).filter(item => item !== null) as MemoryItem[];
-        }
-        return Promise.resolve(items);
-    }
-
-    /**
-     * Filters dynamically parsing natively evaluating bounds mathematically seamlessly securely.
-     */
-    private filterItem(item: MemoryItem): MemoryItem | null {
+    protected evaluateMatch(item: MemoryItem, searchStr: string): boolean {
         let matchesAddressRange = false;
-        // Intercept spatial boundaries explicitly executing binary math accurately mapping textual queries cleanly natively
-        if (this.searchString.startsWith('0x')) {
-            const searchAddr = parseInt(this.searchString, 16);
+        if (searchStr.startsWith('0x')) {
+            const searchAddr = parseInt(searchStr, 16);
             if (!isNaN(searchAddr) && item.addr !== undefined && item.size !== undefined) {
                 matchesAddressRange = (searchAddr >= item.addr && searchAddr < (item.addr + item.size));
             }
         }
+        return item.label.toLowerCase().includes(searchStr) || 
+               (item.details && item.details.toLowerCase().includes(searchStr)) ||
+               matchesAddressRange;
+    }
 
-        // Expand matching logic intuitively integrating sizes natively
-        const matchesSelf = item.label.toLowerCase().includes(this.searchString) || 
-                            (item.details && item.details.toLowerCase().includes(this.searchString)) ||
-                            matchesAddressRange;
-        
-        // Leaf nodes cleanly terminate effectively bounding spatial constraints natively
-        if (!item.children || item.children.length === 0) {
-            return matchesSelf ? item : null;
-        }
-
-        const filteredChildren = item.children.map(child => this.filterItem(child)).filter(c => c !== null) as MemoryItem[];
-        
-        // Maintain visually nested arrays exactly passing constraints perfectly down gracefully natively
-        if (matchesSelf || filteredChildren.length > 0) {
-            const childrenToUse = matchesSelf ? item.children : filteredChildren;
-            return new MemoryItem(item.label, 
-                      matchesSelf ? item.collapsibleState : vscode.TreeItemCollapsibleState.Expanded, 
-                      item.details, 
-                      childrenToUse);
-        }
-        return null;
+    protected cloneNode(item: MemoryItem, matchesSelf: boolean, childrenToUse: MemoryItem[]): MemoryItem {
+        const newItem = new MemoryItem(item.label, 
+                  matchesSelf ? item.collapsibleState : vscode.TreeItemCollapsibleState.Expanded, 
+                  item.details, 
+                  childrenToUse,
+                  item.id,
+                  item.command);
+        newItem.addr = item.addr;
+        newItem.size = item.size;
+        return newItem;
     }
 }

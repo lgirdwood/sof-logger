@@ -565,35 +565,6 @@ export function activate(context: vscode.ExtensionContext) {
     // Pump natively empty logical arrays down UI tracks natively decoupling strict loads correctly safely
     const logData: any[] = [];
     traceProvider.refresh(logData);
-
-    if (!currentPanelChart && (targetView === 'chart' || !targetView)) {
-        const panelChart = vscode.window.createWebviewPanel(
-            'sofLoggerVisualizer', 'SOF Execution Chart', vscode.ViewColumn.One,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        panelChart.onDidDispose(() => currentPanelChart = undefined, undefined, context.subscriptions);
-        currentPanelChart = panelChart;
-        panelChart.webview.html = getWebviewContent(context.extensionPath, 'chart');
-        panelChart.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
-        panelChart.webview.onDidReceiveMessage(m => handleReady(m, panelChart, true), undefined, context.subscriptions);
-    }
-      
-    if (!currentPanelMem && (targetView === 'memory' || !targetView)) {
-        const panelMem = vscode.window.createWebviewPanel(
-            'sofLoggerMemoryMap', 'SOF Memory Map', vscode.ViewColumn.Two,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        panelMem.onDidDispose(() => currentPanelMem = undefined, undefined, context.subscriptions);
-        currentPanelMem = panelMem;
-        panelMem.webview.html = getWebviewContent(context.extensionPath, 'memory');
-        panelMem.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
-        panelMem.webview.onDidReceiveMessage(m => handleReady(m, panelMem, false), undefined, context.subscriptions);
-    }
-
-    // Pump the TraceTree natively efficiently bypassing UI block limits completely natively gracefully inherently correctly flawlessly safely purely securely implicitly explicitly securely 
-    traceProvider.refresh(logData);
-    memoryProvider.refresh(logData, [], [], []);
-
     const targetBuildDir = resolveVSCodeVars(config.get<string>('targetBuildDir'));
     let targetElfPath = targetBuildDir ? path.join(targetBuildDir, 'zephyr', 'zephyr.elf') : '';
 
@@ -656,6 +627,27 @@ export function activate(context: vscode.ExtensionContext) {
              });
          }
       };
+
+    const createSofPanel = (id: string, title: string, viewColumn: vscode.ViewColumn, layoutType: 'chart'|'memory', isChart: boolean, onDispose: () => void) => {
+        const panel = vscode.window.createWebviewPanel(id, title, viewColumn, { enableScripts: true, retainContextWhenHidden: true });
+        panel.onDidDispose(onDispose, undefined, context.subscriptions);
+        panel.webview.html = getWebviewContent(context.extensionPath, layoutType);
+        panel.webview.onDidReceiveMessage(handleWebviewMessages, undefined, context.subscriptions);
+        panel.webview.onDidReceiveMessage(m => handleReady(m, panel, isChart), undefined, context.subscriptions);
+        return panel;
+    };
+
+    if (!currentPanelChart && (targetView === 'chart' || !targetView)) {
+        currentPanelChart = createSofPanel('sofLoggerVisualizer', 'SOF Execution Chart', vscode.ViewColumn.One, 'chart', true, () => currentPanelChart = undefined);
+    }
+      
+    if (!currentPanelMem && (targetView === 'memory' || !targetView)) {
+        currentPanelMem = createSofPanel('sofLoggerMemoryMap', 'SOF Memory Map', vscode.ViewColumn.Two, 'memory', false, () => currentPanelMem = undefined);
+    }
+
+    // Pump the TraceTree natively efficiently bypassing UI block limits completely natively gracefully inherently correctly flawlessly safely purely securely implicitly explicitly securely 
+    traceProvider.refresh(logData);
+    memoryProvider.refresh(logData, [], [], []);
 
   });
 
