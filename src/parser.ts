@@ -15,6 +15,7 @@ export interface LogDataPoint {
   excCause?: number;          // Xtensa EXCCAUSE execution termination signals
   excVaddr?: string;          // Extracted Exception Faulting Address natively dynamically logically
   isZephyrFatal?: boolean;    // Explicitly flags hardware termination logs logically
+  isStackSwitch?: boolean;    // Explicitly denoting thread SP swaps securely
   tlbType?: 'I' | 'D';        // TLB type: Instruction or Data
   tlbDetails?: string;        // Explicit string detailing TLB metadata
   ioType?: 'read' | 'write';  // Hardware IO execution bounds natively
@@ -109,6 +110,7 @@ export class IncrementalLogParser {
   private regionRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s*:\s*(0x[0-9a-fA-F]+)\s*-\s*(0x[0-9a-fA-F]+)/i;
   private sramTopologyRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s*:\s*(\d+)\s+banks of (0x[0-9a-fA-F]+)\s+bytes/i;
   private aliasRegex = /^\s*(?:\[.*?\])?\s*([a-zA-Z0-9_-]+)\s+non-coherent:\s+\d+\s+core\s+shadows\s+@\s+(0x[0-9a-fA-F]+),\s+coherent\s+alias\s+@\s+(0x[0-9a-fA-F]+)\s+\(size\s+(0x[0-9a-fA-F]+)\)/i;
+  private stackSwitchRegex = /STACK SWITCH DETECTED:/i;
 
   constructor(private filePath: string) {}
 
@@ -182,6 +184,7 @@ export class IncrementalLogParser {
         let changed = false;
         let currentExc: number | null = null;
         let isCurrentFatal: boolean = false;
+        let isStackSwitch: boolean = false;
         let currentTlbType: 'I' | 'D' | null = null;
         let currentTlbDetails: any = null;
         let currentIoType: 'read' | 'write' | null = null;
@@ -240,6 +243,12 @@ export class IncrementalLogParser {
         let currentFuncArgs: string[] | null = null;
         let currentFuncRet: string | null = null;
         let currentFuncSp: string | null = null;
+
+        const switchMatch = line.match(this.stackSwitchRegex);
+        if (switchMatch) {
+            isStackSwitch = true;
+            changed = true;
+        }
 
         // Recursive Stack Evaluator assigning depths systematically
         const entryMatch = line.match(this.funcEntryRegex);
@@ -350,6 +359,7 @@ export class IncrementalLogParser {
             callDepth: this.currentCallDepth,
             excCause: currentExc !== null ? currentExc : undefined,
             isZephyrFatal: isCurrentFatal ? true : undefined,
+            isStackSwitch: isStackSwitch ? true : undefined,
             c: this.currentC !== null ? this.currentC : undefined,
             tlbType: currentTlbType !== null ? currentTlbType : undefined,
             tlbDetails: currentTlbDetails !== null ? currentTlbDetails : undefined,

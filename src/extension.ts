@@ -13,6 +13,22 @@ let qemuTerminal: vscode.Terminal | undefined;
 let currentPanelChart: vscode.WebviewPanel | undefined;
 let currentPanelMem: vscode.WebviewPanel | undefined;
 
+export function zoomChartBounds(startT: number | undefined, endT?: number) {
+    if (currentPanelChart && startT !== undefined) {
+        currentPanelChart.webview.postMessage({
+            command: 'zoomBounds',
+            startT: startT,
+            endT: endT || startT
+        });
+        try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Chart updated gracefully\n`); } catch(e){}
+    } else if (!currentPanelChart) {
+        vscode.window.showInformationMessage(`Target Panel Chart dropped abruptly!`);
+        try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: Chart Panel undefined\n`); } catch(e){}
+    } else {
+        try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: startT is undefined\n`); } catch(e){}
+    }
+}
+
 // Structural tree models directly feeding sidebar views
 let traceProvider = new TraceTreeProvider();
 let memoryProvider = new MemoryTreeProvider();
@@ -112,19 +128,7 @@ class SOFTerminalLinkProvider implements vscode.TerminalLinkProvider {
                  });
                  
                  // Directly zoom executions dynamically bypassing redundant rendering completely gracefully effortlessly flawlessly implicitly
-                 if (traceItem.startT !== undefined && currentPanelChart) {
-                      currentPanelChart.webview.postMessage({
-                          command: 'zoomBounds',
-                          startT: traceItem.startT,
-                          endT: traceItem.endT || traceItem.startT
-                      });
-                      try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Chart updated gracefully\n`); } catch(e){}
-                 } else if (!currentPanelChart) {
-                      vscode.window.showInformationMessage(`Target Panel Chart dropped abruptly!`);
-                      try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: Chart Panel undefined\n`); } catch(e){}
-                 } else {
-                      try { fs.appendFileSync('/tmp/sof-handler.log', `[Zoom] Drop: startT is undefined\n`); } catch(e){}
-                 }
+                 zoomChartBounds(traceItem.startT, traceItem.endT);
              }
         }
 
@@ -477,13 +481,7 @@ export function activate(context: vscode.ExtensionContext) {
     lastClickLine = line;
 
     // Smoothly broadcast the execution window bound scaling natively backwards into the Webview!
-    if (currentPanelChart && startT !== undefined) {
-      currentPanelChart.webview.postMessage({
-        command: 'zoomBounds',
-        startT: startT,
-        endT: endT || startT
-      });
-    }
+    zoomChartBounds(startT, endT);
 
     // Ping memory views targeting address pulses flawlessly exactly directly correctly
     if (currentPanelMem && addr !== undefined) {

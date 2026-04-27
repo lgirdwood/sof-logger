@@ -30,6 +30,9 @@ export class TraceTreeItem extends vscode.TreeItem implements IBaseTreeItem {
 export class TraceTreeProvider extends BaseTreeProvider<TraceTreeItem> {
     // Lifo recursive scope implicitly tracking nested boundaries dynamically explicitly correctly seamlessly 
     private stack: TraceTreeItem[] = [];
+    
+    // Exact structural binding tracking thread boundaries sequentially intelligently seamlessly
+    private currentStackPage: number | null = null;
 
     /**
      * Resolves the deepest and most chronologically recent execution matched securely purely dynamically seamlessly explicit neatly seamlessly efficiently
@@ -132,6 +135,7 @@ export class TraceTreeProvider extends BaseTreeProvider<TraceTreeItem> {
     clear(): void {
         this.rootItems = [];
         this.stack = [];
+        this.currentStackPage = null;
         this._onDidChangeTreeData.fire();
     }
 
@@ -159,6 +163,37 @@ export class TraceTreeProvider extends BaseTreeProvider<TraceTreeItem> {
         for (let i = 0; i < deltaLogData.length; i++) {
             const p = deltaLogData[i];
             
+            // Re-root seamlessly terminating ongoing structures allowing thread differentiation natively
+            if (p.isStackSwitch) {
+                this.stack = [];
+            }
+
+            // Track implicit stack switches actively extrapolating them from pure SP boundary limits directly cleanly safely natively
+            if (p.funcSp !== undefined) {
+                const spNum = parseInt(p.funcSp, 16);
+                if (!isNaN(spNum)) {
+                    const SP_PAGE_MASK = 0xFFFFF000;
+                    const spPage = spNum & SP_PAGE_MASK;
+                    
+                    if (this.currentStackPage === null) {
+                        this.currentStackPage = spPage;
+                    } else if (this.currentStackPage !== spPage) {
+                        this.currentStackPage = spPage;
+                        this.stack = []; // Flush exact layout contexts terminating structural nesting directly
+                        
+                        // Provide explicit visual indicators decoupling contexts linearly mapped exactly organically
+                        const switchNode = new TraceTreeItem(
+                             `STACK SWITCH DETECTED: SP Page ~ 0x${spPage.toString(16)}`,
+                             vscode.TreeItemCollapsibleState.None,
+                             undefined, undefined, undefined, p.t
+                        );
+                        switchNode.iconPath = new vscode.ThemeIcon('layers');
+                        switchNode.description = 'Thread Context Swap';
+                        this.rootItems.push(switchNode);
+                    }
+                }
+            }
+
             // Execute evaluations dynamically validating structurally explicit entries
             if (p.funcAddr !== undefined) {
                 // Detect Stack Entry inherently allocating children exactly perfectly 
