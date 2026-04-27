@@ -2,7 +2,7 @@
   "name": "sof-logger",
   "displayName": "SOF Logger",
   "description": "Visualizes QEMU Logs with PS bits and Cache Misses",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "thesofproject",
   "repository": {
     "type": "git",
