@@ -243,12 +243,22 @@ export class IncrementalLogParser {
 
         // Recursive Stack Evaluator assigning depths systematically
         const entryMatch = line.match(this.funcEntryRegex);
+        const retMatch = line.match(this.funcRetRegex);
+        
         if (entryMatch) {
           this.currentCallDepth++; // Increment context linearly natively
           changed = true;
+          this.isUnwindingFatalStack = false; // Reset exclusively returning to healthy tracking dynamically appropriately securely natively!
           currentFuncAddr = parseInt(entryMatch[1], 16);
           currentFuncSp = entryMatch[2];
           currentFuncArgs = [entryMatch[4], entryMatch[5], entryMatch[6], entryMatch[7], entryMatch[8], entryMatch[9]];
+        } else if (retMatch) {
+          this.currentCallDepth = Math.max(0, this.currentCallDepth - 1); // Decrement carefully bypassing negative dips seamlessly natively correctly organically cleverly explicitly
+          changed = true;
+          this.isUnwindingFatalStack = false; // Normal execution explicitly resumes securely dynamically automatically efficiently optimally 
+          currentFuncAddr = parseInt(retMatch[1], 16);
+          currentFuncSp = retMatch[2];
+          currentFuncRet = retMatch[4];
         } else if (this.isUnwindingFatalStack) {
           const regDumpMatch = line.match(this.regDumpRegex);
           if (regDumpMatch) {
@@ -263,15 +273,6 @@ export class IncrementalLogParser {
               changed = true;
               currentFuncRet = stackDumpMatch[1];
             }
-          }
-        } else {
-          const retMatch = line.match(this.funcRetRegex);
-          if (retMatch) {
-            this.currentCallDepth = Math.max(0, this.currentCallDepth - 1); // Decrement carefully bypassing negative dips seamlessly
-            changed = true;
-            currentFuncAddr = parseInt(retMatch[1], 16);
-            currentFuncSp = retMatch[2];
-            currentFuncRet = retMatch[4];
           }
         }
 
